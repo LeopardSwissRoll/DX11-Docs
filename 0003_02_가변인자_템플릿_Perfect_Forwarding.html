@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Perfect Forwarding 해부 | DX11 노트</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <header class="header">
+    <button class="hamburger" id="hamburger" aria-label="메뉴 열기">
+      <span></span><span></span><span></span>
+    </button>
+    <div class="header-logo">
+      <a href="index.html" style="color:inherit;text-decoration:none">DX11 NOTE</a>
+      <span class="subtitle">Deep Dive</span>
+    </div>
+    <button class="theme-toggle" id="themeToggle" aria-label="테마 전환">
+      <span class="theme-toggle-icon"></span>
+    </button>
+  </header>
+
+  <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+  <nav class="sidebar" id="sidebar"></nav>
+
+  <main class="main-content content">
+    <div class="page-title fade-in">
+      <span class="tag tag-detail">DEEP DIVE</span>
+      <h1>가변 인자 템플릿 +<br>Perfect Forwarding</h1>
+      <p class="page-desc"><code>New&lt;TestObject&gt;(1, "hello")</code> 한 줄이 어떻게 작동하는지. <code>...</code>이 뭔지, <code>std::forward</code>가 없으면 뭐가 달라지는지.</p>
+    </div>
+
+    <!-- 출발점 -->
+    <h2 id="start">출발점: Defines.h의 New 함수</h2>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> 이 4줄에 고급 문법 3개 <span class="filename">Core/Defines.h</span></div>
+<pre><span class="kw">template</span>&lt;<span class="kw">typename</span> <span class="tp">T</span>, <span class="kw">typename</span> ...<span class="tp">Args</span>&gt;
+<span class="tp">Ptr</span>&lt;<span class="tp">T</span>&gt; <span class="fn">New</span>(<span class="tp">Args</span>&amp;&amp;... args)
+{
+    <span class="kw">return</span> <span class="kw">new</span> <span class="tp">T</span>(<span class="tp">std</span>::<span class="fn">forward</span>&lt;<span class="tp">Args</span>&gt;(args)...);
+}</pre>
+    </div>
+
+    <div class="mem-scene fade-in">
+      <div class="mem-scene-title">이 4줄 안의 3가지 고급 문법</div>
+      <div class="mem-steps">
+        <div class="mem-step">
+          <div class="mem-step-num">1</div>
+          <div class="mem-step-text"><code>typename ...Args</code> — <strong>가변 인자 템플릿</strong> (Parameter Pack). 인자 개수 제한 없음.</div>
+        </div>
+        <div class="mem-step">
+          <div class="mem-step-num">2</div>
+          <div class="mem-step-text"><code>Args&amp;&amp;</code> — <strong>전달 참조</strong> (Forwarding Reference). lvalue/rvalue 모두 받음.</div>
+        </div>
+        <div class="mem-step">
+          <div class="mem-step-num">3</div>
+          <div class="mem-step-text"><code>std::forward&lt;Args&gt;(args)...</code> — <strong>Perfect Forwarding</strong>. 인자의 원래 종류를 보존.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 가변 인자 템플릿 -->
+    <h2 id="pack">개념 1: 가변 인자 템플릿 — <code>typename ...Args</code></h2>
+
+    <h3>문제: 인자 개수가 제각각</h3>
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> 인자 0개, 1개, 2개...</div>
+<pre><span class="cm">// 인자 0개</span>
+<span class="tp">Ptr</span>&lt;<span class="tp">TestObject</span>&gt; a = <span class="fn">New</span>&lt;<span class="tp">TestObject</span>&gt;();
+
+<span class="cm">// 인자 1개</span>
+<span class="tp">Ptr</span>&lt;<span class="tp">TestObject</span>&gt; b = <span class="fn">New</span>&lt;<span class="tp">TestObject</span>&gt;(<span class="num">42</span>);
+
+<span class="cm">// 인자 2개</span>
+<span class="tp">Ptr</span>&lt;<span class="tp">Monster</span>&gt; c = <span class="fn">New</span>&lt;<span class="tp">Monster</span>&gt;(<span class="str">"고블린"</span>, <span class="num">100</span>);</pre>
+    </div>
+
+    <p>이걸 <strong>하나의 함수</strong>로 어떻게 처리하지?</p>
+
+    <h3>해결: Parameter Pack</h3>
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> ... 의 의미</div>
+<pre><span class="kw">template</span>&lt;<span class="kw">typename</span> <span class="tp">T</span>, <span class="kw">typename</span> ...<span class="tp">Args</span>&gt;
+<span class="cm">//                    ^^^^^^^^^^^^</span>
+<span class="cm">//                    "0개 이상의 타입을 묶음으로 받겠다"</span>
+
+<span class="tp">Ptr</span>&lt;<span class="tp">T</span>&gt; <span class="fn">New</span>(<span class="tp">Args</span>&amp;&amp;... args)
+<span class="cm">//         ^^^^^^^^^^^^^</span>
+<span class="cm">//         "묶음에 들어온 인자들을 그대로 나열"</span></pre>
+    </div>
+
+    <ul>
+      <li><code>typename ...Args</code> — <strong>타입 팩</strong>. 인자의 타입을 0개 이상 아무렇게나 받음.</li>
+      <li><code>Args&amp;&amp;... args</code> — <strong>인자 팩</strong>. 타입 팩에 대응하는 실제 값들.</li>
+      <li><code>...</code> — <strong>팩 전개(expansion)</strong>. 컴파일러가 인자 개수에 맞게 코드를 생성함.</li>
+    </ul>
+
+    <h3>컴파일러가 실제로 하는 일</h3>
+
+    <div class="mem-scene fade-in">
+      <div class="mem-scene-title">New&lt;TestObject&gt;(42, "hello") 호출 시 팩 전개</div>
+      <div class="mem-steps">
+        <div class="mem-step">
+          <div class="mem-step-num">1</div>
+          <div class="mem-step-text"><code>Args</code> = {<code>int</code>, <code>const char*</code>}</div>
+        </div>
+        <div class="mem-step">
+          <div class="mem-step-num">2</div>
+          <div class="mem-step-text"><code>args</code> = {<code>42</code>, <code>"hello"</code>}</div>
+        </div>
+        <div class="mem-step">
+          <div class="mem-step-num">3</div>
+          <div class="mem-step-text">전개: <code>new TestObject(std::forward&lt;int&gt;(42), std::forward&lt;const char*&gt;("hello"))</code></div>
+        </div>
+      </div>
+      <p style="font-size:13px;color:var(--text-secondary);margin-top:8px">인자가 3개면 3개로, 0개면 0개로 — <strong>컴파일 타임에</strong> 맞는 코드가 생성됨.</p>
+    </div>
+
+    <!-- lvalue vs rvalue -->
+    <h2 id="lrvalue">개념 2: lvalue vs rvalue</h2>
+    <p>Perfect Forwarding을 이해하려면 이 구분이 필수:</p>
+
+    <div class="compare-grid">
+      <div class="compare-item" style="border-color:#58a6ff44">
+        <div class="compare-label" style="color:var(--accent)">lvalue — "주소를 가진 것"</div>
+        <div class="code-block" style="margin-bottom:0">
+          <div class="code-header"><span class="lang">C++</span></div>
+<pre><span class="tp">int</span> x = <span class="num">10</span>;        <span class="cm">// x는 lvalue — &amp;x 가능</span>
+<span class="tp">TestObject</span> obj;    <span class="cm">// obj는 lvalue</span></pre>
+        </div>
+      </div>
+      <div class="compare-item" style="border-color:#d2992244">
+        <div class="compare-label" style="color:var(--accent-orange)">rvalue — "임시 값"</div>
+        <div class="code-block" style="margin-bottom:0">
+          <div class="code-header"><span class="lang">C++</span></div>
+<pre><span class="num">42</span>                 <span class="cm">// 이름 없는 임시 값</span>
+<span class="tp">std::string</span>(<span class="str">"hi"</span>)  <span class="cm">// 이름 없는 임시 객체</span>
+<span class="tp">std</span>::<span class="fn">move</span>(obj)     <span class="cm">// "더 안 쓸 거야" 선언</span></pre>
+        </div>
+      </div>
+    </div>
+
+    <h3>왜 중요한가?</h3>
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> 복사 vs 이동</div>
+<pre><span class="kw">class</span> <span class="tp">BigObject</span> {
+    <span class="fn">BigObject</span>(<span class="kw">const</span> <span class="tp">BigObject</span>&amp; other) { <span class="cm">/* 복사: 느림, 메모리 할당 */</span> }
+    <span class="fn">BigObject</span>(<span class="tp">BigObject</span>&amp;&amp; other)      { <span class="cm">/* 이동: 빠름, 포인터만 옮김 */</span> }
+};</pre>
+    </div>
+
+    <div class="compare-grid">
+      <div class="compare-item bad">
+        <div class="compare-label">lvalue 넘기면</div>
+        <p style="font-size:13px;color:var(--text-secondary)"><strong>복사</strong> 생성자 호출 → 느림<br>데이터를 통째로 복제</p>
+      </div>
+      <div class="compare-item good">
+        <div class="compare-label">rvalue 넘기면</div>
+        <p style="font-size:13px;color:var(--text-secondary)"><strong>이동</strong> 생성자 호출 → 빠름<br>포인터만 옮기고 원본은 비움</p>
+      </div>
+    </div>
+
+    <div class="analogy-box">
+      <div class="analogy-header">
+        <span class="analogy-icon">📦</span>
+        <span class="analogy-title">ANALOGY — 이사 비유</span>
+      </div>
+      <div class="analogy-content">
+        <strong>복사(lvalue)</strong> = 집에 있는 물건을 하나하나 <strong>똑같이 새로 사서</strong> 새 집에 배치. 비쌈.<br>
+        <strong>이동(rvalue)</strong> = 이삿짐 트럭에 그대로 <strong>실어서 옮기기</strong>. 원래 집은 텅 비지만 빠름.<br><br>
+        <code>std::forward</code>는 "이 물건이 원래 <strong>옮길 물건(rvalue)</strong>이었으면, 복사하지 말고 트럭에 싣자"라고 알려주는 역할.
+      </div>
+    </div>
+
+    <!-- 전달 참조 -->
+    <h2 id="uref">개념 3: 전달 참조 — <code>Args&amp;&amp;</code></h2>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> 전달 참조 (Universal Reference)</div>
+<pre><span class="kw">template</span>&lt;<span class="kw">typename</span> <span class="tp">T</span>&gt;
+<span class="tp">void</span> <span class="fn">foo</span>(<span class="tp">T</span>&amp;&amp; arg)  <span class="cm">// ← 이게 전달 참조</span></pre>
+    </div>
+
+    <p><code>T&amp;&amp;</code>가 <strong>템플릿 매개변수에 붙으면</strong> 특별한 의미가 있어:</p>
+
+    <div class="type-table-wrap">
+      <table class="type-table">
+        <thead><tr><th>넘긴 것</th><th>T 추론</th><th>T&amp;&amp; 결과</th></tr></thead>
+        <tbody>
+          <tr><td class="t-desc">lvalue <code>int x</code></td><td class="t-real">T = int&amp;</td><td class="t-desc"><code>int&amp; &amp;&amp;</code> → <code>int&amp;</code> (lvalue 참조)</td></tr>
+          <tr><td class="t-desc">rvalue <code>42</code></td><td class="t-real">T = int</td><td class="t-desc"><code>int&amp;&amp;</code> (rvalue 참조)</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="info-box">
+      <div class="info-label">참조 축약 (Reference Collapsing)</div>
+      <code>&amp; &amp;&amp;</code> → <code>&amp;</code> / <code>&amp;&amp; &amp;&amp;</code> → <code>&amp;&amp;</code><br>
+      이 규칙 덕분에 <code>T&amp;&amp;</code>는 lvalue든 rvalue든 <strong>다 받을 수 있는</strong> 만능 참조가 됨.
+    </div>
+
+    <!-- std::forward -->
+    <h2 id="forward">개념 4: std::forward — "받은 그대로 넘겨라"</h2>
+
+    <div class="compare-grid">
+      <div class="compare-item bad">
+        <div class="compare-label">forward 없이 (변질됨)</div>
+        <div class="code-block" style="margin-bottom:0">
+          <div class="code-header"><span class="lang">C++</span></div>
+<pre><span class="kw">template</span>&lt;<span class="kw">typename</span> <span class="tp">T</span>, <span class="kw">typename</span> ...<span class="tp">Args</span>&gt;
+<span class="tp">Ptr</span>&lt;<span class="tp">T</span>&gt; <span class="fn">New_Bad</span>(<span class="tp">Args</span>&amp;&amp;... args)
+{
+    <span class="kw">return</span> <span class="kw">new</span> <span class="tp">T</span>(args...); <span class="cm">// forward 없음!</span>
+}</pre>
+        </div>
+        <p style="font-size:12px;color:var(--accent-red);margin-top:8px"><code>args</code>는 이름이 생겼으니 lvalue → rvalue가 복사로 변질</p>
+      </div>
+      <div class="compare-item good">
+        <div class="compare-label">forward 있으면 (원본 유지)</div>
+        <div class="code-block" style="margin-bottom:0">
+          <div class="code-header"><span class="lang">C++</span></div>
+<pre><span class="kw">template</span>&lt;<span class="kw">typename</span> <span class="tp">T</span>, <span class="kw">typename</span> ...<span class="tp">Args</span>&gt;
+<span class="tp">Ptr</span>&lt;<span class="tp">T</span>&gt; <span class="fn">New</span>(<span class="tp">Args</span>&amp;&amp;... args)
+{
+    <span class="kw">return</span> <span class="kw">new</span> <span class="tp">T</span>(<span class="tp">std</span>::<span class="fn">forward</span>&lt;<span class="tp">Args</span>&gt;(args)...);
+}</pre>
+        </div>
+        <p style="font-size:12px;color:var(--accent-green);margin-top:8px">rvalue는 rvalue로 유지 → 이동 생성자 호출 가능!</p>
+      </div>
+    </div>
+
+    <!-- 메모리 시각화: forward 유무 차이 -->
+    <div class="mem-scene fade-in">
+      <div class="mem-scene-title">New&lt;BigObject&gt;(BigObject()) 호출 시 — forward 유무 비교</div>
+      <div class="compare-grid">
+        <div class="compare-item bad" style="text-align:center">
+          <div class="compare-label">forward 없음</div>
+          <div style="display:flex;align-items:center;justify-content:center;gap:6px;margin:12px 0">
+            <div class="mem-cell used" style="min-width:70px">BigObject<br><span style="font-size:8px">원본</span></div>
+            <div class="mem-arrow">→ 복사 →</div>
+            <div class="mem-cell dead" style="min-width:70px;text-decoration:none">BigObject<br><span style="font-size:8px">복제본</span></div>
+          </div>
+          <p style="font-size:11px;color:var(--accent-red)">데이터 전체 복제. 느림.</p>
+        </div>
+        <div class="compare-item good" style="text-align:center">
+          <div class="compare-label">forward 있음</div>
+          <div style="display:flex;align-items:center;justify-content:center;gap:6px;margin:12px 0">
+            <div class="mem-cell free" style="min-width:70px">BigObject<br><span style="font-size:8px">비워짐</span></div>
+            <div class="mem-arrow">→ 이동 →</div>
+            <div class="mem-cell rent" style="min-width:70px">BigObject<br><span style="font-size:8px">그대로</span></div>
+          </div>
+          <p style="font-size:11px;color:var(--accent-green)">포인터만 옮김. 빠름.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- 전체 흐름 추적 -->
+    <h2 id="trace">전체 흐름 추적: <code>New&lt;TestObject&gt;(42)</code></h2>
+
+    <div class="flow-diagram fade-in"><span class="flow-fn">New</span>&lt;<span class="flow-highlight">TestObject</span>&gt;(<span class="flow-highlight">42</span>)
+  <span class="flow-arrow">│</span>
+  <span class="flow-arrow">├─</span> T = TestObject, Args = {int}, args = {42}
+  <span class="flow-arrow">│</span>
+  <span class="flow-arrow">├─</span> <span class="flow-desc">#ifdef _USE_MEMORY_POOL:</span>
+  <span class="flow-arrow">│</span>   <span class="flow-fn">new TestObject</span>(<span class="flow-fn">std::forward</span>&lt;int&gt;(42));
+  <span class="flow-arrow">│</span>   <span class="flow-arrow">├─</span> <span class="flow-fn">Object::operator new</span>(sizeof(TestObject)) <span class="flow-desc">← MemoryPool</span>
+  <span class="flow-arrow">│</span>   <span class="flow-arrow">└─</span> <span class="flow-fn">TestObject</span>(42) <span class="flow-desc">생성자 호출</span>
+  <span class="flow-arrow">│</span>   <span class="flow-arrow">→</span> <span class="flow-highlight">TestObject*</span> 반환 (= Ptr&lt;TestObject&gt; = T*)
+  <span class="flow-arrow">│</span>
+  <span class="flow-arrow">├─</span> <span class="flow-desc">#elif _USE_OBJECT_POOL:</span>
+  <span class="flow-arrow">│</span>   <span class="flow-fn">ObjectPool::Instance().Rent</span>&lt;TestObject&gt;();
+  <span class="flow-arrow">│</span>   <span class="flow-desc">⚠ 인자(42)가 무시됨! (Rent는 인자 안 받음)</span>
+  <span class="flow-arrow">│</span>   <span class="flow-arrow">→</span> <span class="flow-highlight">TestObject*</span> 반환
+  <span class="flow-arrow">│</span>
+  <span class="flow-arrow">└─</span> <span class="flow-desc">#else (shared_ptr):</span>
+      <span class="flow-fn">std::make_shared</span>&lt;TestObject&gt;(<span class="flow-fn">std::forward</span>&lt;int&gt;(42));
+      <span class="flow-arrow">├─</span> <span class="flow-desc">힙에 TestObject + control block 할당</span>
+      <span class="flow-arrow">└─</span> <span class="flow-fn">TestObject</span>(42) <span class="flow-desc">생성자 호출</span>
+      <span class="flow-arrow">→</span> <span class="flow-highlight">shared_ptr&lt;TestObject&gt;</span> 반환</div>
+
+    <div class="warn-box">
+      <div class="warn-label">ObjectPool 전략의 한계</div>
+      <code>_USE_OBJECT_POOL</code>일 때 <code>New&lt;T&gt;(args...)</code>의 인자가 <strong>무시됨</strong>. <code>Rent&lt;T&gt;()</code>는 이미 생성된 객체를 큐에서 꺼내는 것이지, 새로 만드는 게 아니니까. 생성자 인자 전달이 필요한 경우 ObjectPool 전략에서는 별도 초기화 함수가 필요.
+    </div>
+
+    <!-- 3전략 비교 -->
+    <h2 id="compare">한눈에 보는 3가지 전략의 New&lt;T&gt;()</h2>
+
+    <div class="type-table-wrap fade-in">
+      <table class="type-table">
+        <thead><tr><th></th><th>_USE_MEMORY_POOL</th><th>_USE_OBJECT_POOL</th><th>기본 (shared_ptr)</th></tr></thead>
+        <tbody>
+          <tr><td class="t-name">내부 동작</td><td class="t-desc"><code>new T(forward(args)...)</code></td><td class="t-desc"><code>ObjectPool::Rent&lt;T&gt;()</code></td><td class="t-desc"><code>make_shared&lt;T&gt;(forward(args)...)</code></td></tr>
+          <tr><td class="t-name">인자 전달</td><td class="t-desc" style="color:var(--accent-green)">O (생성자에 전달)</td><td class="t-desc" style="color:var(--accent-red)">X (이미 생성된 객체)</td><td class="t-desc" style="color:var(--accent-green)">O (생성자에 전달)</td></tr>
+          <tr><td class="t-name">반환 타입</td><td class="t-real">T*</td><td class="t-real">T*</td><td class="t-real">shared_ptr&lt;T&gt;</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Prev / Next -->
+    <div class="page-nav" id="page-nav"></div>
+  <script>
+  var PAGE_ID = "0003_02";
+  var ON_THIS_PAGE = [
+    { id: "start", label: "출발점: New 함수" },
+    { id: "pack", label: "가변 인자 템플릿" },
+    { id: "lrvalue", label: "lvalue vs rvalue" },
+    { id: "uref", label: "전달 참조" },
+    { id: "forward", label: "std::forward" },
+    { id: "trace", label: "전체 흐름 추적" },
+    { id: "compare", label: "3전략 비교" },
+  ];
+  </script>
+  <script src="nav.js"></script>
+  </main>
+</body>
+</html>

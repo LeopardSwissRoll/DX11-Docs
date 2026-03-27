@@ -1,0 +1,824 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>operator new/delete 해부 | DX11 노트</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Header -->
+  <header class="header">
+    <button class="hamburger" id="hamburger" aria-label="메뉴 열기">
+      <span></span><span></span><span></span>
+    </button>
+    <div class="header-logo">
+      <a href="index.html" style="color:inherit;text-decoration:none">DX11 NOTE</a>
+      <span class="subtitle">Deep Dive</span>
+    </div>
+    <button class="theme-toggle" id="themeToggle" aria-label="테마 전환">
+      <span class="theme-toggle-icon"></span>
+    </button>
+  </header>
+
+  <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+  <!-- Sidebar -->
+  <nav class="sidebar" id="sidebar"></nav>
+
+  <!-- Main -->
+  <main class="main-content content">
+    <div class="page-title fade-in">
+      <span class="tag tag-detail">DEEP DIVE</span>
+      <h1>operator new/delete<br>완전 해부</h1>
+      <p class="page-desc">
+        new가 하는 일을 가로챈다 — MemoryPool이 어떻게 투명하게 작동하는지 한 줄씩 추적.
+        <code>new TestObject()</code> 한 줄 뒤에서 벌어지는 일을 낱낱이 파헤쳐 보자.
+      </p>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- 1. 원래 new가 하는 일 -->
+    <!-- ============================================================ -->
+    <h2 id="original-new">원래 new가 하는 일</h2>
+    <p>
+      C++에서 <code>new</code>는 단순한 키워드가 아니다.
+      사실 <strong>2단계</strong>로 작동하는 연산자(operator)다.
+      대부분의 C++ 입문자들이 "new는 메모리 할당이다"라고만 알고 있는데,
+      <strong>정확히 절반만 맞는 말</strong>이다.
+    </p>
+
+    <div class="mem-scene fade-in fade-in-d1">
+      <div class="mem-scene-title">new의 2단계 — 할당 + 생성</div>
+
+      <!-- Step 1: 메모리 할당 -->
+      <div class="mem-steps">
+        <div class="mem-step">
+          <div class="mem-step-num">1</div>
+          <div class="mem-step-text">
+            <strong>operator new(sizeof(TestObject))</strong> 호출 — <strong>메모리 할당</strong><br>
+            <span style="color:var(--text-secondary);font-size:13px">내부적으로 <code>malloc()</code>을 호출해서 요청한 크기만큼 힙에서 빈 공간을 확보한다.</span>
+          </div>
+        </div>
+        <div class="mem-step">
+          <div class="mem-step-num">2</div>
+          <div class="mem-step-text">
+            <strong>생성자(Constructor) 호출</strong> — <strong>객체 초기화</strong><br>
+            <span style="color:var(--text-secondary);font-size:13px">확보한 메모리 위에 멤버 변수를 세팅하고 객체를 "살아있는 상태"로 만든다.</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Visual: Before/After Memory -->
+      <div style="display:flex;gap:24px;flex-wrap:wrap;margin-top:16px">
+        <div>
+          <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;font-family:var(--font-heading);letter-spacing:1px">STEP 1 — 할당 후 (raw memory)</div>
+          <div class="mem-row">
+            <div class="mem-cell used mem-cell-wide">???</div>
+            <div class="mem-cell used mem-cell-wide">???</div>
+            <div class="mem-cell used mem-cell-wide">???</div>
+          </div>
+          <div style="font-size:11px;color:var(--text-secondary)">공간은 잡았지만 내용은 쓰레기값</div>
+        </div>
+        <div class="mem-arrow">→</div>
+        <div>
+          <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;font-family:var(--font-heading);letter-spacing:1px">STEP 2 — 생성자 호출 후</div>
+          <div class="mem-row">
+            <div class="mem-cell rent mem-cell-wide">_bActive</div>
+            <div class="mem-cell rent mem-cell-wide">_Type</div>
+            <div class="mem-cell rent mem-cell-wide">_Pos</div>
+          </div>
+          <div style="font-size:11px;color:var(--text-secondary)">멤버 변수가 올바른 초기값으로 세팅됨</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> new의 정체 <span class="filename">컴파일러 변환</span></div>
+<pre><span class="cm">// 우리가 쓰는 코드</span>
+<span class="tp">TestObject</span>* obj = <span class="kw">new</span> <span class="tp">TestObject</span>();
+
+<span class="cm">// 컴파일러가 실제로 하는 일 (의사 코드)</span>
+<span class="tp">void</span>* raw = <span class="kw">operator</span> <span class="kw">new</span>(<span class="kw">sizeof</span>(<span class="tp">TestObject</span>));  <span class="cm">// 1단계: 메모리 할당</span>
+<span class="tp">TestObject</span>* obj = <span class="kw">static_cast</span>&lt;<span class="tp">TestObject</span>*&gt;(raw);
+obj-&gt;<span class="fn">TestObject</span>();                                  <span class="cm">// 2단계: 생성자 호출</span></pre>
+    </div>
+
+    <div class="analogy-box">
+      <div class="analogy-header">
+        <span class="analogy-icon">🏠</span>
+        <span class="analogy-title">ANALOGY — 집 짓기</span>
+      </div>
+      <div class="analogy-content">
+        <strong>operator new</strong> = 빈 땅을 사는 것 (메모리 확보)<br>
+        <strong>생성자</strong> = 땅 위에 집을 짓는 것 (객체 초기화)<br><br>
+        땅만 사면 아직 집이 없고, 집을 지어야 사람(데이터)이 살 수 있다.
+        우리가 하려는 건 <strong>"땅을 사는 방법"을 바꾸는 것</strong>이다.
+        부동산(OS)을 통하지 않고, 미리 사둔 부지(MemoryPool)에서 꺼내 쓰는 것!
+      </div>
+    </div>
+
+    <div class="info-box">
+      <div class="info-label">핵심 인사이트</div>
+      C++은 <code>operator new</code>를 <strong>오버로딩(재정의)</strong>할 수 있게 해준다.
+      즉, 1단계의 "메모리 할당 방법"을 프로그래머가 직접 바꿀 수 있다.
+      생성자 호출(2단계)은 컴파일러가 <strong>자동으로</strong> 해주므로 건드릴 필요 없다.
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- 2. MemoryPool 버전 operator new -->
+    <!-- ============================================================ -->
+    <h2 id="pool-new">MemoryPool 버전 operator new</h2>
+    <p>
+      <code>Object</code> 클래스에 <code>operator new</code>를 정의하면,
+      <code>Object</code>를 상속한 모든 객체(TestObject, Monster, Bullet 등)가
+      <code>new</code>할 때 이 함수를 거치게 된다. <strong>한 줄도 바꾸지 않고!</strong>
+    </p>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> Object::operator new/delete <span class="filename">Object.h (_USE_MEMORY_POOL 버전)</span></div>
+<pre><span class="kw">class</span> <span class="tp">Object</span>
+{
+<span class="kw">protected</span>:
+    <span class="tp">FSegment</span> _Segment;  <span class="cm">// 반납할 때 필요한 정보 저장</span>
+
+<span class="kw">public</span>:
+    <span class="cm">// ★ 커스텀 operator new</span>
+    <span class="kw">void</span>* <span class="kw">operator</span> <span class="kw">new</span>(<span class="tp">size_t</span> size)
+    {
+        <span class="cm">// 1) MemoryPool에서 메모리를 빌려온다 (OS한테 안 감!)</span>
+        <span class="tp">FSegment</span> seg = <span class="tp">MemoryPool</span>::<span class="fn">Instance</span>().<span class="fn">Rent</span>((<span class="tp">int</span>)size);
+
+        <span class="cm">// 2) 나중에 delete할 때 필요한 정보를 객체에 저장</span>
+        <span class="tp">Object</span>* obj = (<span class="tp">Object</span>*)seg._Data;
+        obj-&gt;_Segment = seg;
+
+        <span class="cm">// 3) 메모리 주소를 반환 → 여기 위에 생성자가 호출됨</span>
+        <span class="kw">return</span> seg._Data;
+    }
+
+    <span class="cm">// ★ 커스텀 operator delete</span>
+    <span class="kw">void</span> <span class="kw">operator</span> <span class="kw">delete</span>(<span class="kw">void</span>* ptr) <span class="kw">noexcept</span>
+    {
+        <span class="tp">Object</span>* obj = (<span class="tp">Object</span>*)ptr;
+        <span class="tp">MemoryPool</span>::<span class="fn">Instance</span>().<span class="fn">Return</span>(obj-&gt;_Segment);
+    }
+};</pre>
+    </div>
+
+    <p>
+      이게 전부다. <code>operator new</code>와 <code>operator delete</code> 딱 두 개만 재정의하면,
+      기존의 모든 <code>new TestObject()</code> / <code>delete obj</code> 코드가
+      <strong>자동으로 풀을 경유</strong>하게 된다.
+    </p>
+
+    <div class="info-box">
+      <div class="info-label">size_t size는 어디서 오나?</div>
+      컴파일러가 <code>new TestObject()</code>를 만나면 <code>sizeof(TestObject)</code>를 계산해서
+      <code>operator new</code>의 첫 번째 인자로 자동 전달한다.
+      프로그래머가 직접 넘기는 게 아니다!
+    </div>
+
+    <h3>왜 Object 클래스에 정의하나?</h3>
+    <p>
+      C++의 <strong>클래스 멤버 operator new</strong>는 <strong>상속</strong>된다.
+      <code>Object</code>에 한 번만 정의해두면, <code>Object</code>를 상속하는 모든 클래스
+      (TestObject, Monster, Bullet...)가 자동으로 이 커스텀 new를 사용하게 된다.
+    </p>
+
+    <div class="compare-grid">
+      <div class="compare-item bad">
+        <div class="compare-label">글로벌 operator new 재정의</div>
+        <p style="font-size:13px;color:var(--text-secondary)">
+          프로그램의 <strong>모든</strong> new가 영향받음.<br>
+          STL 컨테이너, 문자열 등 <strong>풀이 필요 없는 것까지</strong> 전부 바뀜. 위험!
+        </p>
+      </div>
+      <div class="compare-item good">
+        <div class="compare-label">클래스 멤버 operator new</div>
+        <p style="font-size:13px;color:var(--text-secondary)">
+          해당 클래스(와 자식 클래스)의 new<strong>만</strong> 영향받음.<br>
+          게임 오브젝트만 풀을 쓰고, 나머지는 기본 동작. <strong>안전!</strong>
+        </p>
+      </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- 3. operator delete -->
+    <!-- ============================================================ -->
+    <h2 id="operator-delete">operator delete</h2>
+    <p>
+      <code>delete</code>도 <code>new</code>와 마찬가지로 <strong>2단계</strong>로 작동한다.
+      순서만 반대다.
+    </p>
+
+    <div class="mem-scene fade-in">
+      <div class="mem-scene-title">delete의 2단계 — 소멸 + 해제</div>
+      <div class="mem-steps">
+        <div class="mem-step">
+          <div class="mem-step-num">1</div>
+          <div class="mem-step-text">
+            <strong>소멸자(Destructor) 호출</strong> — <strong>정리(cleanup)</strong><br>
+            <span style="color:var(--text-secondary);font-size:13px">객체가 들고 있던 자원(파일 핸들, 다른 메모리 등)을 정리한다.</span>
+          </div>
+        </div>
+        <div class="mem-step">
+          <div class="mem-step-num">2</div>
+          <div class="mem-step-text">
+            <strong>operator delete(ptr)</strong> 호출 — <strong>메모리 반환</strong><br>
+            <span style="color:var(--text-secondary);font-size:13px">기본: <code>free()</code> 호출. 우리 버전: <code>obj->_Segment</code>를 꺼내서 MemoryPool에 반환.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> delete의 내부 동작 <span class="filename">컴파일러 변환</span></div>
+<pre><span class="cm">// 우리가 쓰는 코드</span>
+<span class="kw">delete</span> obj;
+
+<span class="cm">// 컴파일러가 실제로 하는 일 (의사 코드)</span>
+obj-&gt;~<span class="fn">TestObject</span>();                                  <span class="cm">// 1단계: 소멸자 호출</span>
+<span class="tp">Object</span>::<span class="kw">operator</span> <span class="kw">delete</span>(obj);                       <span class="cm">// 2단계: _Segment로 풀에 반납</span></pre>
+    </div>
+
+    <div class="analogy-box">
+      <div class="analogy-header">
+        <span class="analogy-icon">🏚️</span>
+        <span class="analogy-title">ANALOGY — 집 철거</span>
+      </div>
+      <div class="analogy-content">
+        <strong>소멸자</strong> = 집 안의 가구를 다 빼내고 철거하는 것<br>
+        <strong>operator delete</strong> = 빈 땅을 반납하는 것<br><br>
+        우리 버전에서는 땅을 국가(OS)에 반납하지 않고,
+        <strong>우리 부지(풀)에 되돌려놓는다</strong>. 나중에 다시 쓰려고!
+      </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- 4. 전체 흐름 추적 -->
+    <!-- ============================================================ -->
+    <h2 id="full-trace">전체 흐름 추적</h2>
+    <p>
+      <code>new TestObject()</code> 한 줄이 실행될 때,
+      코드가 어떤 경로를 따라 내려가는지 전체를 추적해보자.
+    </p>
+
+    <div class="mem-scene fade-in fade-in-d1">
+      <div class="mem-scene-title">new TestObject() — 전체 호출 경로</div>
+      <div class="mem-steps">
+        <div class="mem-step">
+          <div class="mem-step-num">1</div>
+          <div class="mem-step-text">
+            <code>new TestObject()</code> 호출<br>
+            <span style="color:var(--text-secondary);font-size:13px">컴파일러가 <code>sizeof(TestObject)</code>를 계산 (예: 40바이트)</span>
+          </div>
+        </div>
+        <div class="mem-step">
+          <div class="mem-step-num">2</div>
+          <div class="mem-step-text">
+            <code>Object::operator new(40)</code> 호출<br>
+            <span style="color:var(--text-secondary);font-size:13px">TestObject는 Object를 상속하므로 Object의 operator new가 불린다</span>
+          </div>
+        </div>
+        <div class="mem-step">
+          <div class="mem-step-num">3</div>
+          <div class="mem-step-text">
+            <code>MemoryPool::Instance().Rent(40)</code> 호출<br>
+            <span style="color:var(--text-secondary);font-size:13px">싱글톤 MemoryPool에게 40바이트짜리 메모리를 "빌려줘" 요청</span>
+          </div>
+        </div>
+        <div class="mem-step">
+          <div class="mem-step-num">4</div>
+          <div class="mem-step-text">
+            <code>IndexFromSize(40)</code> — 풀 인덱스 계산<br>
+            <span style="color:var(--text-secondary);font-size:13px">40바이트 → log2(40)=5.3 → ceil=6 → 64바이트 풀 선택 (idx=2)</span>
+          </div>
+        </div>
+        <div class="mem-step">
+          <div class="mem-step-num">5</div>
+          <div class="mem-step-text">
+            <code>SegmentPool::Rent()</code> — 64바이트 풀에서 빈 세그먼트 꺼냄<br>
+            <span style="color:var(--text-secondary);font-size:13px">스택(free list)에서 하나 pop. 비어있으면 새 chunk 할당</span>
+          </div>
+        </div>
+        <div class="mem-step">
+          <div class="mem-step-num">6</div>
+          <div class="mem-step-text">
+            <code>return seg._Data</code> — 포인터 반환<br>
+            <span style="color:var(--text-secondary);font-size:13px">Segment 구조체의 데이터 영역 시작 주소를 돌려줌</span>
+          </div>
+        </div>
+        <div class="mem-step">
+          <div class="mem-step-num">7</div>
+          <div class="mem-step-text">
+            <strong>생성자 실행!</strong> — 반환된 메모리 위에 TestObject 초기화<br>
+            <span style="color:var(--text-secondary);font-size:13px">멤버 변수 세팅, 가상 함수 테이블(vptr) 설정 등</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="flow-diagram fade-in fade-in-d2"><span class="flow-fn">new TestObject()</span>
+  <span class="flow-arrow">│</span>
+  <span class="flow-arrow">▼</span>
+<span class="flow-fn">Object::operator new</span>(<span class="flow-highlight">40</span>)
+  <span class="flow-arrow">│</span>
+  <span class="flow-arrow">▼</span>
+<span class="flow-fn">MemoryPool::Rent</span>(<span class="flow-highlight">40</span>)
+  <span class="flow-arrow">│</span>
+  <span class="flow-arrow">├─▶</span> <span class="flow-fn">IndexFromSize</span>(<span class="flow-highlight">40</span>) → idx=<span class="flow-highlight">2</span> (64B pool)
+  <span class="flow-arrow">│</span>
+  <span class="flow-arrow">▼</span>
+<span class="flow-fn">SegmentPool[2]::Rent</span>()
+  <span class="flow-arrow">│</span>
+  <span class="flow-arrow">├─▶</span> <span class="flow-desc">free list에서 pop (or 새 chunk 할당)</span>
+  <span class="flow-arrow">│</span>
+  <span class="flow-arrow">▼</span>
+<span class="flow-highlight">return seg._Data</span>  <span class="flow-desc">← 64바이트 메모리 블록 포인터</span>
+  <span class="flow-arrow">│</span>
+  <span class="flow-arrow">▼</span>
+<span class="flow-fn">TestObject::TestObject()</span>  <span class="flow-desc">← 생성자가 이 메모리 위에서 실행</span></div>
+
+    <div class="info-box">
+      <div class="info-label">40바이트 요청인데 64바이트를 주는 이유?</div>
+      메모리 풀은 <strong>2의 거듭제곱 크기</strong>(16, 32, 64, 128...)로 미리 잘라놓는다.
+      40바이트는 32바이트 풀에 안 들어가니까, 그 다음 크기인 <strong>64바이트 풀</strong>에서 빌려준다.
+      24바이트가 낭비되지만, 관리가 훨씬 단순해지고 빠르다.
+      이것을 <strong>내부 단편화(internal fragmentation)</strong>라고 한다.
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- 5. 포인터 산술 -->
+    <!-- ============================================================ -->
+    <h2 id="pointer-math">포인터 산술</h2>
+    <p>
+      SegmentPool이 새 chunk를 할당할 때, 큰 메모리 덩어리를 받아서
+      <strong>일정 간격으로 잘라</strong> 각 세그먼트의 시작 주소를 계산한다.
+      이게 <strong>포인터 산술(pointer arithmetic)</strong>의 핵심 사용법이다.
+    </p>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> SegmentPool::Create() — Chunk 분할 <span class="filename">SegmentPool.cpp</span></div>
+<pre><span class="tp">byte</span>* chunk = <span class="kw">new</span> <span class="tp">byte</span>[_BuffSize * _BucketSize]();
+_Chunks.<span class="fn">push_back</span>(chunk);
+
+<span class="kw">for</span> (<span class="tp">size_t</span> i = <span class="num">0</span>; i &lt; _BucketSize; ++i)
+{
+    <span class="tp">FSegment</span> seg;
+    seg._Data = chunk + (i * _BuffSize);  <span class="cm">// ← 포인터 산술!</span>
+    seg._Size = _BuffSize;
+    seg._IsPooled = <span class="kw">true</span>;
+
+    _Buckets.<span class="fn">push</span>(seg);
+}</pre>
+    </div>
+
+    <h3>chunk + (i * _BuffSize)가 뭘 의미하는가?</h3>
+    <p>
+      <code>chunk</code>는 <code>byte*</code> (<code>unsigned char*</code>)이므로 <strong>1바이트 단위</strong>로 이동한다.
+      <code>chunk + i * 64</code>는 "chunk 시작 주소에서 <strong>i x 64바이트 뒤</strong>의 주소"라는 뜻이다.
+    </p>
+
+    <div class="mem-scene fade-in fade-in-d1">
+      <div class="mem-scene-title">포인터 산술 — 메모리 청크 분할 시각화</div>
+      <div style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">
+        chunk 시작 주소 = 0x1000 / _BuffSize = 64 (0x40)
+      </div>
+
+      <div class="mem-chunk" style="margin-bottom:20px">
+        <div class="mem-chunk-label">chunk (전체: 64 x 64 = 4096 bytes)</div>
+
+        <div style="display:flex;flex-direction:column;gap:8px;width:100%">
+          <!-- i=0 -->
+          <div style="display:flex;align-items:center;gap:8px">
+            <div style="min-width:30px;font-family:var(--font-code);font-size:11px;color:var(--text-muted)">i=0</div>
+            <div class="mem-cell rent" style="min-width:120px;flex:1">
+              <span style="font-size:9px">seg[0]._Data</span>
+            </div>
+            <div style="font-family:var(--font-code);font-size:11px;color:var(--accent)">
+              0x1000 <span style="color:var(--text-muted)">(chunk + 0 x 64)</span>
+            </div>
+          </div>
+          <!-- i=1 -->
+          <div style="display:flex;align-items:center;gap:8px">
+            <div style="min-width:30px;font-family:var(--font-code);font-size:11px;color:var(--text-muted)">i=1</div>
+            <div class="mem-cell rent" style="min-width:120px;flex:1">
+              <span style="font-size:9px">seg[1]._Data</span>
+            </div>
+            <div style="font-family:var(--font-code);font-size:11px;color:var(--accent)">
+              0x1040 <span style="color:var(--text-muted)">(chunk + 1 x 64)</span>
+            </div>
+          </div>
+          <!-- i=2 -->
+          <div style="display:flex;align-items:center;gap:8px">
+            <div style="min-width:30px;font-family:var(--font-code);font-size:11px;color:var(--text-muted)">i=2</div>
+            <div class="mem-cell rent" style="min-width:120px;flex:1">
+              <span style="font-size:9px">seg[2]._Data</span>
+            </div>
+            <div style="font-family:var(--font-code);font-size:11px;color:var(--accent)">
+              0x1080 <span style="color:var(--text-muted)">(chunk + 2 x 64)</span>
+            </div>
+          </div>
+          <!-- i=3 -->
+          <div style="display:flex;align-items:center;gap:8px">
+            <div style="min-width:30px;font-family:var(--font-code);font-size:11px;color:var(--text-muted)">i=3</div>
+            <div class="mem-cell used" style="min-width:120px;flex:1">
+              <span style="font-size:9px">seg[3]._Data</span>
+            </div>
+            <div style="font-family:var(--font-code);font-size:11px;color:var(--accent)">
+              0x10C0 <span style="color:var(--text-muted)">(chunk + 3 x 64)</span>
+            </div>
+          </div>
+          <!-- dots -->
+          <div style="text-align:center;color:var(--text-muted);font-size:14px">⋮</div>
+          <!-- i=63 -->
+          <div style="display:flex;align-items:center;gap:8px">
+            <div style="min-width:30px;font-family:var(--font-code);font-size:11px;color:var(--text-muted)">i=63</div>
+            <div class="mem-cell free" style="min-width:120px;flex:1">
+              <span style="font-size:9px">seg[63]._Data</span>
+            </div>
+            <div style="font-family:var(--font-code);font-size:11px;color:var(--accent)">
+              0x1FC0 <span style="color:var(--text-muted)">(chunk + 63 x 64)</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="font-size:13px;color:var(--text-secondary);line-height:1.8">
+        <strong style="color:var(--accent)">계산 공식:</strong> 주소 = chunk + i &times; _BuffSize<br>
+        <strong style="color:var(--accent)">i=0:</strong> 0x1000 + 0 &times; 64 = 0x1000<br>
+        <strong style="color:var(--accent)">i=1:</strong> 0x1000 + 1 &times; 64 = 0x1000 + 0x40 = <strong>0x1040</strong><br>
+        <strong style="color:var(--accent)">i=2:</strong> 0x1000 + 2 &times; 64 = 0x1000 + 0x80 = <strong>0x1080</strong><br>
+        각 세그먼트는 정확히 64바이트 간격으로 떨어져 있다.
+      </div>
+    </div>
+
+    <div class="analogy-box">
+      <div class="analogy-header">
+        <span class="analogy-icon">🅿️</span>
+        <span class="analogy-title">ANALOGY — 주차장</span>
+      </div>
+      <div class="analogy-content">
+        넓은 공터(chunk)를 빌렸다고 생각해봐.<br>
+        주차 한 칸의 너비가 64m(=_BuffSize)라면,<br><br>
+        <strong>0번 칸</strong> = 입구에서 0m 지점<br>
+        <strong>1번 칸</strong> = 입구에서 64m 지점<br>
+        <strong>2번 칸</strong> = 입구에서 128m 지점<br><br>
+        <strong>i번 칸의 위치 = 입구 + i &times; 칸 너비</strong><br>
+        이게 포인터 산술의 전부야!
+      </div>
+    </div>
+
+    <div class="info-box">
+      <div class="info-label">왜 byte* (unsigned char*) 인가?</div>
+      이 프로젝트에서는 <code>using byte = unsigned char;</code>로 정의했다.
+      <code>byte</code>는 정확히 <strong>1바이트</strong>이므로,
+      <code>byte*</code>에 숫자를 더하면 <strong>정확히 그 바이트 수만큼</strong> 주소가 이동한다.
+      만약 <code>int*</code>(4바이트)였다면 <code>ptr + 1</code>이 4바이트 이동해버려서 계산이 꼬인다.
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- 6. 2의 거듭제곱 정렬 -->
+    <!-- ============================================================ -->
+    <h2 id="power-of-two">2의 거듭제곱 정렬</h2>
+    <p>
+      MemoryPool은 풀을 <strong>16, 32, 64, 128, 256, 512</strong> 바이트 크기로 만든다.
+      전부 <strong>2의 거듭제곱</strong>이다. 임의의 크기 요청이 들어오면
+      <strong>그 크기 이상인 가장 작은 2의 거듭제곱</strong>을 찾아야 한다.
+    </p>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> IndexFromSize 함수 <span class="filename">MemoryPool.cpp</span></div>
+<pre><span class="tp">int</span> <span class="tp">MemoryPool</span>::<span class="fn">IndexFromSize</span>(<span class="tp">int</span> size)
+{
+    <span class="tp">int</span> log = <span class="kw">static_cast</span>&lt;<span class="tp">int</span>&gt;(<span class="tp">std</span>::<span class="fn">ceil</span>(<span class="tp">std</span>::<span class="fn">log2</span>(size)));
+    <span class="tp">int</span> idx = log - _DefaultPow;  <span class="cm">// _DefaultPow = 4</span>
+    <span class="kw">return</span> idx;
+}</pre>
+    </div>
+
+    <div class="mem-scene fade-in fade-in-d1">
+      <div class="mem-scene-title">2의 거듭제곱 풀 선택 — 시각화</div>
+
+      <!-- The ruler diagram -->
+      <div style="margin-bottom:20px">
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:10px;font-family:var(--font-heading);letter-spacing:1px">
+          EXAMPLE: 40 BYTES 요청
+        </div>
+        <div class="mem-steps">
+          <div class="mem-step">
+            <div class="mem-step-num" style="background:var(--accent-orange)">1</div>
+            <div class="mem-step-text">입력 크기: <strong style="color:var(--accent-orange)">40B</strong></div>
+          </div>
+          <div class="mem-step">
+            <div class="mem-step-num" style="background:var(--accent-orange)">2</div>
+            <div class="mem-step-text">log2(40) = <strong style="color:var(--accent-orange)">5.32...</strong></div>
+          </div>
+          <div class="mem-step">
+            <div class="mem-step-num" style="background:var(--accent-orange)">3</div>
+            <div class="mem-step-text">ceil(5.32) = <strong style="color:var(--accent-orange)">6</strong></div>
+          </div>
+          <div class="mem-step">
+            <div class="mem-step-num" style="background:var(--accent-orange)">4</div>
+            <div class="mem-step-text">idx = 6 - 4 = <strong style="color:var(--accent-orange)">2</strong></div>
+          </div>
+          <div class="mem-step">
+            <div class="mem-step-num" style="background:var(--accent-green)">5</div>
+            <div class="mem-step-text"><strong style="color:var(--accent-green)">64B 풀 선택!</strong> (2^6 = 64)</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Pool ruler -->
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;font-family:var(--font-heading);letter-spacing:1px">POOL INDEX TABLE</div>
+      <div class="mem-row" style="gap:6px">
+        <div style="display:flex;flex-direction:column;align-items:center;gap:4px">
+          <div class="mem-cell" style="min-width:60px;border-color:var(--border)">
+            <span style="font-size:10px">16B</span>
+          </div>
+          <div style="font-size:9px;color:var(--text-muted)">idx=0</div>
+          <div style="font-size:9px;color:var(--text-muted)">2^4</div>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:4px">
+          <div class="mem-cell" style="min-width:60px;border-color:var(--border)">
+            <span style="font-size:10px">32B</span>
+          </div>
+          <div style="font-size:9px;color:var(--text-muted)">idx=1</div>
+          <div style="font-size:9px;color:var(--text-muted)">2^5</div>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:4px">
+          <div class="mem-cell highlight rent" style="min-width:60px;box-shadow:0 0 0 2px var(--accent-green)">
+            <span style="font-size:10px;font-weight:600">64B</span>
+          </div>
+          <div style="font-size:9px;color:var(--accent-green);font-weight:600">idx=2</div>
+          <div style="font-size:9px;color:var(--accent-green);font-weight:600">2^6</div>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:4px">
+          <div class="mem-cell" style="min-width:60px;border-color:var(--border)">
+            <span style="font-size:10px">128B</span>
+          </div>
+          <div style="font-size:9px;color:var(--text-muted)">idx=3</div>
+          <div style="font-size:9px;color:var(--text-muted)">2^7</div>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:4px">
+          <div class="mem-cell" style="min-width:60px;border-color:var(--border)">
+            <span style="font-size:10px">256B</span>
+          </div>
+          <div style="font-size:9px;color:var(--text-muted)">idx=4</div>
+          <div style="font-size:9px;color:var(--text-muted)">2^8</div>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:4px">
+          <div class="mem-cell" style="min-width:60px;border-color:var(--border)">
+            <span style="font-size:10px">512B</span>
+          </div>
+          <div style="font-size:9px;color:var(--text-muted)">idx=5</div>
+          <div style="font-size:9px;color:var(--text-muted)">2^9</div>
+        </div>
+      </div>
+      <div style="margin-top:8px;font-size:12px;color:var(--text-secondary)">
+        40B &rarr; 32B(idx=1)에는 안 들어감 &rarr; <strong style="color:var(--accent-green)">64B(idx=2) 선택</strong>
+      </div>
+    </div>
+
+    <h3>다른 예시들</h3>
+    <div class="type-table-wrap fade-in">
+      <table class="type-table">
+        <thead>
+          <tr>
+            <th>요청 크기</th>
+            <th>log2</th>
+            <th>ceil</th>
+            <th>idx</th>
+            <th>실제 할당</th>
+            <th>낭비</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="t-name">8B</td>
+            <td class="t-real">3.0</td>
+            <td class="t-real">3 → 4(min)</td>
+            <td class="t-real">0</td>
+            <td class="t-desc" style="color:var(--accent-green)">16B</td>
+            <td class="t-desc">8B</td>
+          </tr>
+          <tr>
+            <td class="t-name">16B</td>
+            <td class="t-real">4.0</td>
+            <td class="t-real">4</td>
+            <td class="t-real">0</td>
+            <td class="t-desc" style="color:var(--accent-green)">16B</td>
+            <td class="t-desc">0B</td>
+          </tr>
+          <tr>
+            <td class="t-name">17B</td>
+            <td class="t-real">4.09</td>
+            <td class="t-real">5</td>
+            <td class="t-real">1</td>
+            <td class="t-desc" style="color:var(--accent-green)">32B</td>
+            <td class="t-desc">15B</td>
+          </tr>
+          <tr>
+            <td class="t-name">40B</td>
+            <td class="t-real">5.32</td>
+            <td class="t-real">6</td>
+            <td class="t-real">2</td>
+            <td class="t-desc" style="color:var(--accent-green)">64B</td>
+            <td class="t-desc">24B</td>
+          </tr>
+          <tr>
+            <td class="t-name">64B</td>
+            <td class="t-real">6.0</td>
+            <td class="t-real">6</td>
+            <td class="t-real">2</td>
+            <td class="t-desc" style="color:var(--accent-green)">64B</td>
+            <td class="t-desc">0B</td>
+          </tr>
+          <tr>
+            <td class="t-name">200B</td>
+            <td class="t-real">7.64</td>
+            <td class="t-real">8</td>
+            <td class="t-real">4</td>
+            <td class="t-desc" style="color:var(--accent-green)">256B</td>
+            <td class="t-desc">56B</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="info-box">
+      <div class="info-label">왜 2의 거듭제곱인가?</div>
+      <ul style="padding-left:20px;color:var(--text-secondary);font-size:14px;line-height:1.9">
+        <li><strong>분류가 간단</strong> — log2 한 번이면 어떤 풀인지 바로 알 수 있다</li>
+        <li><strong>풀 수가 적다</strong> — 16~512B까지 커버해도 풀이 6개뿐</li>
+        <li><strong>CPU 캐시 정렬</strong> — 2의 거듭제곱은 캐시 라인에 자연스럽게 정렬됨</li>
+        <li><strong>비트 연산 최적화</strong> — 나눗셈 대신 시프트(shift)로 처리 가능</li>
+      </ul>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- 7. _DEBUG new 재정의 -->
+    <!-- ============================================================ -->
+    <h2 id="debug-new">_DEBUG new 재정의 문제</h2>
+    <p>
+      Visual Studio의 디버그 모드에서는 메모리 누수를 추적하기 위해
+      <code>new</code> 키워드를 <strong>매크로로 재정의</strong>한다.
+      이게 우리의 <code>operator new</code>와 <strong>심각하게 충돌</strong>한다.
+    </p>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> 디버그 모드 new 매크로 <span class="filename">Client.cpp (상단)</span></div>
+<pre><span class="pp">#ifdef _DEBUG</span>
+<span class="pp">#include</span> &lt;<span class="str">crtdbg.h</span>&gt;
+<span class="pp">#define</span> <span class="kw">new</span> <span class="kw">new</span>(<span class="mc">_NORMAL_BLOCK</span>, <span class="mc">__FILE__</span>, <span class="mc">__LINE__</span>)
+<span class="pp">#endif</span></pre>
+    </div>
+
+    <div class="warn-box">
+      <div class="warn-label">CRITICAL — 매크로 충돌</div>
+      이 매크로가 활성화되면 <strong>모든 <code>new</code> 키워드</strong>가 치환된다.<br>
+      우리가 정의한 <code>operator new</code>의 선언 자체가 망가진다!
+    </div>
+
+    <h3>무엇이 깨지는가?</h3>
+
+    <div class="mem-scene fade-in">
+      <div class="mem-scene-title">매크로 충돌 — Before / After</div>
+
+      <div style="display:flex;flex-direction:column;gap:16px">
+        <div>
+          <div style="font-size:11px;color:var(--accent-green);margin-bottom:6px;font-family:var(--font-heading);letter-spacing:1px">
+            BEFORE MACRO (정상)
+          </div>
+          <div style="background:var(--bg-code);border:1px solid #3fb95044;border-radius:6px;padding:12px 16px;font-family:var(--font-code);font-size:13px;color:var(--text-code)">
+            <span class="kw">void</span>* <span class="kw">operator</span> <span class="kw">new</span>(<span class="tp">size_t</span> size)
+          </div>
+          <div style="font-size:12px;color:var(--accent-green);margin-top:4px">
+            OK — 정상적인 operator new 선언
+          </div>
+        </div>
+
+        <div class="mem-arrow-down" style="font-size:20px">⬇ #define new new(_NORMAL_BLOCK, __FILE__, __LINE__) 적용</div>
+
+        <div>
+          <div style="font-size:11px;color:var(--accent-red);margin-bottom:6px;font-family:var(--font-heading);letter-spacing:1px">
+            AFTER MACRO (깨짐!)
+          </div>
+          <div style="background:var(--bg-code);border:1px solid #f8514944;border-radius:6px;padding:12px 16px;font-family:var(--font-code);font-size:13px;color:var(--text-code)">
+            <span class="kw">void</span>* <span class="kw">operator</span> <span style="color:var(--accent-red);text-decoration:line-through">new</span><span style="color:var(--accent-red)">(_NORMAL_BLOCK, __FILE__, __LINE__)</span>(<span class="tp">size_t</span> size)
+          </div>
+          <div style="font-size:12px;color:var(--accent-red);margin-top:4px">
+            COMPILE ERROR — new가 매크로로 치환되어 문법이 완전히 망가짐!
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <p>
+      <code>#define new ...</code>는 <strong>전처리기(preprocessor)</strong> 레벨에서 작동한다.
+      컴파일러가 코드를 보기도 전에, 소스 코드의 모든 <code>new</code>라는 텍스트가 치환된다.
+      <code>operator new</code>라는 <strong>함수 선언 안의 new까지</strong> 바뀌어 버리는 것이다.
+    </p>
+
+    <h3>해결 방법</h3>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> 해결책 — operator new 정의 전에 매크로 해제 <span class="filename">Object.h</span></div>
+<pre><span class="cm">// 방법 1: operator new를 정의하는 파일에서 매크로 해제</span>
+<span class="pp">#ifdef _DEBUG</span>
+<span class="pp">#undef new</span>                <span class="cm">// ← 디버그 매크로 해제!</span>
+<span class="pp">#endif</span>
+
+<span class="kw">void</span>* <span class="tp">Object</span>::<span class="kw">operator</span> <span class="kw">new</span>(<span class="tp">size_t</span> size)
+{
+    <span class="tp">FSegment</span> seg = <span class="tp">MemoryPool</span>::<span class="fn">Instance</span>().<span class="fn">Rent</span>((<span class="tp">int</span>)size);
+    <span class="tp">Object</span>* obj = (<span class="tp">Object</span>*)seg._Data;
+    obj-&gt;_Segment = seg;
+    <span class="kw">return</span> seg._Data;
+}</pre>
+    </div>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> 더 깔끔한 방법 — push/pop macro <span class="filename">Object.h</span></div>
+<pre><span class="pp">#pragma push_macro("new")</span>    <span class="cm">// 현재 new 매크로를 스택에 저장</span>
+<span class="pp">#undef new</span>                    <span class="cm">// new 매크로 해제</span>
+
+<span class="kw">void</span>* <span class="tp">Object</span>::<span class="kw">operator</span> <span class="kw">new</span>(<span class="tp">size_t</span> size)
+{
+    <span class="tp">FSegment</span> seg = <span class="tp">MemoryPool</span>::<span class="fn">Instance</span>().<span class="fn">Rent</span>((<span class="tp">int</span>)size);
+    <span class="tp">Object</span>* obj = (<span class="tp">Object</span>*)seg._Data;
+    obj-&gt;_Segment = seg;
+    <span class="kw">return</span> seg._Data;
+}
+
+<span class="kw">void</span> <span class="tp">Object</span>::<span class="kw">operator</span> <span class="kw">delete</span>(<span class="kw">void</span>* ptr) <span class="kw">noexcept</span>
+{
+    <span class="tp">Object</span>* obj = (<span class="tp">Object</span>*)ptr;
+    <span class="tp">MemoryPool</span>::<span class="fn">Instance</span>().<span class="fn">Return</span>(obj-&gt;_Segment);
+}
+
+<span class="pp">#pragma pop_macro("new")</span>     <span class="cm">// 저장했던 new 매크로 복원</span></pre>
+    </div>
+
+    <div class="info-box">
+      <div class="info-label">push_macro / pop_macro</div>
+      <code>#pragma push_macro("new")</code>는 현재 <code>new</code> 매크로의 정의를 스택에 <strong>임시 저장</strong>한다.
+      <code>#undef new</code>로 해제한 뒤 operator new를 안전하게 정의하고,
+      <code>#pragma pop_macro("new")</code>로 <strong>원래 매크로를 복원</strong>한다.<br><br>
+      이러면 이 파일의 <strong>나머지 코드에서는 디버그 매크로가 다시 작동</strong>하므로,
+      메모리 누수 추적도 정상적으로 유지된다. 가장 안전한 방법이다!
+    </div>
+
+    <div class="analogy-box">
+      <div class="analogy-header">
+        <span class="analogy-icon">🎭</span>
+        <span class="analogy-title">ANALOGY — 변장과 정체</span>
+      </div>
+      <div class="analogy-content">
+        <code>#define new ...</code>는 <strong>"new"라는 이름에 변장을 씌우는 것</strong>이다.<br>
+        <code>operator new</code>를 정의할 때는 진짜 <code>new</code>가 필요한데,
+        변장한 가짜가 나타나서 혼란이 생긴다.<br><br>
+        <strong>push_macro</strong> = "변장 도구를 잠깐 서랍에 넣어"<br>
+        <strong>undef</strong> = "변장 벗어"<br>
+        <strong>pop_macro</strong> = "서랍에서 변장 도구 다시 꺼내"<br><br>
+        정의 구간에서만 맨얼굴(진짜 new)을 보고, 나머지는 다시 변장(디버그 매크로) 유지!
+      </div>
+    </div>
+
+    <h3>전체 요약</h3>
+    <div class="concept-card fade-in">
+      <div class="concept-num">SUMMARY</div>
+      <div class="concept-title">operator new/delete가 하는 일</div>
+      <div class="concept-desc">
+        <ol style="padding-left:20px;line-height:2">
+          <li><strong>operator new</strong>를 Object 클래스에 정의하면, 모든 자식 클래스의 <code>new</code>를 가로챌 수 있다</li>
+          <li>가로챈 <code>new</code>에서 <strong>MemoryPool::Rent()</strong>를 호출하면, OS 대신 풀에서 메모리를 빌려온다</li>
+          <li><strong>operator delete</strong>에서 <strong>MemoryPool::Return()</strong>을 호출하면, 메모리를 OS에 돌려주지 않고 풀에 반납한다</li>
+          <li>풀은 <strong>2의 거듭제곱 크기</strong>로 관리되며, <code>IndexFromSize()</code>로 적절한 풀을 고른다</li>
+          <li>포인터 산술로 chunk 내부를 <strong>동일 크기의 세그먼트</strong>로 분할한다</li>
+          <li><code>_DEBUG</code> 모드의 new 매크로와 충돌하므로 <strong>push/pop_macro</strong>로 우회한다</li>
+        </ol>
+      </div>
+    </div>
+
+    <!-- Prev / Next -->
+    <div class="page-nav" id="page-nav"></div>
+  <script>
+  var PAGE_ID = "0002_02";
+  var ON_THIS_PAGE = [
+    { id: "original-new", label: "원래 new가 하는 일" },
+    { id: "pool-new", label: "MemoryPool 버전 operator new" },
+    { id: "operator-delete", label: "operator delete" },
+    { id: "full-trace", label: "전체 흐름 추적" },
+    { id: "pointer-math", label: "포인터 산술" },
+    { id: "power-of-two", label: "2의 거듭제곱 정렬" },
+    { id: "debug-new", label: "_DEBUG new 재정의" },
+  ];
+  </script>
+  <script src="nav.js"></script>
+  </main>
+
+</body>
+</html>

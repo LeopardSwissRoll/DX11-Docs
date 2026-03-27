@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Day06 — 삼각형 하나 그리기 | DX11 노트</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <header class="header">
+    <button class="hamburger" id="hamburger" aria-label="메뉴 열기">
+      <span></span><span></span><span></span>
+    </button>
+    <div class="header-logo">
+      <a href="index.html" style="color:inherit;text-decoration:none">DX11 NOTE</a>
+      <span class="subtitle">Day 06</span>
+    </div>
+    <button class="theme-toggle" id="themeToggle" aria-label="테마 전환">
+      <span class="theme-toggle-icon"></span>
+    </button>
+  </header>
+
+  <div class="sidebar-overlay" id="sidebarOverlay"></div>
+  <nav class="sidebar" id="sidebar"></nav>
+
+  <main class="main-content content">
+    <div class="page-title fade-in">
+      <span class="tag tag-day">DAY 06</span>
+      <h1>삼각형 하나 그리기<br>전체 흐름</h1>
+      <p class="page-desc">드디어 화면에 뭔가가 그려진다. GameEngine::Render()의 10줄을 한 줄씩 추적하면서, 파이프라인의 각 단계가 실제로 어떤 코드로 실행되는지 연결.</p>
+    </div>
+
+    <!-- 변경 파일 -->
+    <h2 id="files">변경된 파일</h2>
+    <div class="file-grid fade-in fade-in-d1">
+      <div class="file-card"><div class="file-icon cpp">cpp</div><div><div class="file-name">Core/GameEngine.cpp</div><div class="file-role">수정 — Render() 추가</div></div></div>
+      <div class="file-card"><div class="file-icon cpp">cpp</div><div><div class="file-name">Core/Device.cpp</div><div class="file-role">수정 — Clear 구현 완성</div></div></div>
+      <div class="file-card"><div class="file-icon cpp">cpp</div><div><div class="file-name">Core/Mesh.h/cpp</div><div class="file-role">신규 — 버퍼 생성 + 렌더링</div></div></div>
+      <div class="file-card"><div class="file-icon h">h</div><div><div class="file-name">Shader/*</div><div class="file-role">신규 — 셰이더 시스템</div></div></div>
+      <div class="file-card"><div class="file-icon h">h</div><div><div class="file-name">HLSL/ColorMesh.fx</div><div class="file-role">신규 — HLSL 코드</div></div></div>
+      <div class="file-card"><div class="file-icon h">h</div><div><div class="file-name">Core/Asset*</div><div class="file-role">신규 — 에셋 관리 계층</div></div></div>
+      <div class="file-card"><div class="file-icon h">h</div><div><div class="file-name">Core/MemoryPool.h/cpp</div><div class="file-role">수정 — UB 수정 (_rentals)</div></div></div>
+      <div class="file-card"><div class="file-icon h">h</div><div><div class="file-name">Core/Object.h</div><div class="file-role">수정 — Cast&lt;&gt;, This&lt;&gt;</div></div></div>
+    </div>
+
+    <!-- 핵심: Render() -->
+    <h2 id="render">핵심: GameEngine::Render()</h2>
+    <p>이 함수가 <strong>매 프레임</strong> 실행되면서 화면에 삼각형이 그려져.</p>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> 매 프레임 렌더링 <span class="filename">Core/GameEngine.cpp</span></div>
+<pre><span class="tp">void</span> <span class="tp">GameEngine</span>::<span class="fn">Render</span>(<span class="tp">float</span> deltaTime)
+{
+    <span class="tp">Device</span>::<span class="fn">Instance</span>().<span class="fn">ClearBackBuffer</span>(_clearColor);
+    <span class="tp">Device</span>::<span class="fn">Instance</span>().<span class="fn">ClearDepthStencil</span>(<span class="num">1.f</span>, <span class="num">0</span>);
+    <span class="tp">Device</span>::<span class="fn">Instance</span>().<span class="fn">SetTarget</span>();
+
+    <span class="tp">Ptr</span>&lt;<span class="tp">Shader</span>&gt; shader = <span class="tp">ShaderManager</span>::<span class="fn">Instance</span>().<span class="fn">FindShader</span>(<span class="str">"ColorMeshShader"</span>);
+    <span class="tp">Ptr</span>&lt;<span class="tp">Mesh</span>&gt; mesh = <span class="tp">AssetManager</span>::<span class="fn">Instance</span>().<span class="fn">Get</span>&lt;<span class="tp">MeshManager</span>&gt;(<span class="tp">eAssetType</span>::Mesh)-&gt;<span class="fn">FindMesh</span>
+    (<span class="str">"Triangle"</span>);
+
+    shader-&gt;<span class="fn">SetShader</span>();
+    mesh-&gt;<span class="fn">Render</span>();
+
+    <span class="tp">Device</span>::<span class="fn">Instance</span>().<span class="fn">Render</span>();
+}</pre>
+    </div>
+
+    <!-- 한 줄씩 추적 -->
+    <h2 id="trace">한 줄씩 추적 — 파이프라인 매핑</h2>
+
+    <h3>1. Clear — 이전 프레임 지우기</h3>
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> <span class="filename">Core/Device.cpp</span></div>
+<pre><span class="tp">void</span> <span class="tp">Device</span>::<span class="fn">ClearBackBuffer</span>(<span class="tp">float</span> clearColor[<span class="num">4</span>])
+{
+    <span class="cm">//백버퍼 매개변수로 들어온 색상으로 만듭니다.</span>
+    _context-&gt;<span class="fn">ClearRenderTargetView</span>(_targetView.<span class="fn">Get</span>(), clearColor);
+}
+
+<span class="tp">void</span> <span class="tp">Device</span>::<span class="fn">ClearDepthStencil</span>(<span class="tp">float</span> depth, <span class="tp">uint8</span> stencil)
+{
+    <span class="cm">//뎁스/스탠실 뷰를 들어온 매개변수로 밀어줍니다.</span>
+    _context-&gt;<span class="fn">ClearDepthStencilView</span>(_depthStencil.<span class="fn">Get</span>(), <span class="mc">D3D11_CLEAR_DEPTH</span> | <span class="mc">D3D11_CLEAR_STENCIL</span>, depth, stencil);
+}</pre>
+    </div>
+    <p>이전 프레임 지우기. <code>_clearColor = {0, 0, 0, 1}</code> (검정).</p>
+
+    <h3>2. SetTarget — OM 바인딩</h3>
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> <span class="filename">Core/Device.cpp</span></div>
+<pre><span class="tp">void</span> <span class="tp">Device</span>::<span class="fn">SetTarget</span>()
+{
+    <span class="cm">//랜더링 파이프라인 과정에서 마지막에 그림을 출력시킬 목적지를 지정</span>
+    _context-&gt;<span class="fn">OMSetRenderTargets</span>(<span class="num">1</span>, _targetView.<span class="fn">GetAddressOf</span>(), _depthStencil.<span class="fn">Get</span>());
+}</pre>
+    </div>
+
+    <h3>3. 셰이더 + 메시 가져오기</h3>
+    <p>InitManager에서 미리 만들어둔 셰이더와 메시를 <strong>이름으로 검색</strong>. 매 프레임 생성이 아니라 캐싱된 걸 가져옴.</p>
+
+    <h3>4. shader→SetShader() — VS + PS + InputLayout 바인딩</h3>
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> <span class="filename">Shader/GraphicShader.cpp</span></div>
+<pre><span class="tp">void</span> <span class="tp">GraphicShader</span>::<span class="fn">SetShader</span>()
+{
+    <span class="tp">Device</span>::<span class="fn">Instance</span>().<span class="fn">GetContext</span>()-&gt;<span class="fn">VSSetShader</span>(_vs.<span class="fn">Get</span>(), <span class="kw">nullptr</span>, <span class="num">0</span>);
+    <span class="tp">Device</span>::<span class="fn">Instance</span>().<span class="fn">GetContext</span>()-&gt;<span class="fn">PSSetShader</span>(_ps.<span class="fn">Get</span>(), <span class="kw">nullptr</span>, <span class="num">0</span>);
+
+    <span class="tp">Device</span>::<span class="fn">Instance</span>().<span class="fn">GetContext</span>()-&gt;<span class="fn">IASetInputLayout</span>(_inputLayout.<span class="fn">Get</span>());
+}</pre>
+    </div>
+
+    <h3>5. mesh→Render() — IA 바인딩 + Draw</h3>
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> <span class="filename">Core/Mesh.cpp</span></div>
+<pre><span class="tp">void</span> <span class="tp">Mesh</span>::<span class="fn">Render</span>()
+{
+    <span class="tp">uint32</span> stride = _vertexBuffer._size;
+    <span class="tp">uint32</span> offset = <span class="num">0</span>;
+
+    <span class="tp">Device</span>::<span class="fn">Instance</span>().<span class="fn">GetContext</span>()-&gt;<span class="fn">IASetPrimitiveTopology</span>(_primitive);
+    <span class="tp">Device</span>::<span class="fn">Instance</span>().<span class="fn">GetContext</span>()-&gt;<span class="fn">IASetVertexBuffers</span>(<span class="num">0</span>, <span class="num">1</span>, _vertexBuffer._buffer.<span class="fn">GetAddressOf</span>(), &amp;stride, &amp;offset);
+
+    <span class="tp">Device</span>::<span class="fn">Instance</span>().<span class="fn">GetContext</span>()-&gt;<span class="fn">IASetIndexBuffer</span>(_indexBuffer._buffer.<span class="fn">Get</span>(), _indexBuffer._fmt, <span class="num">0</span>);
+
+    <span class="tp">Device</span>::<span class="fn">Instance</span>().<span class="fn">GetContext</span>()-&gt;<span class="fn">DrawIndexed</span>(_indexBuffer._count, <span class="num">0</span>, <span class="num">0</span>);
+}</pre>
+    </div>
+    <p><code>DrawIndexed(3, 0, 0)</code> — 이 순간 GPU가 파이프라인 전체를 실행: <strong>IA→VS→RS→PS→OM</strong>.</p>
+
+    <h3>6. Device::Render() — Present</h3>
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> <span class="filename">Core/Device.cpp</span></div>
+<pre><span class="tp">void</span> <span class="tp">Device</span>::<span class="fn">Render</span>()
+{
+    _swapChain-&gt;<span class="fn">Present</span>(<span class="num">0</span>, <span class="num">0</span>);
+}</pre>
+    </div>
+
+    <!-- 매핑 테이블 -->
+    <h2 id="mapping">코드 ↔ 파이프라인 매핑</h2>
+
+    <div class="type-table-wrap fade-in">
+      <table class="type-table">
+        <thead><tr><th>Render() 코드</th><th>단계</th><th>하는 일</th></tr></thead>
+        <tbody>
+          <tr><td class="t-real">ClearBackBuffer()</td><td class="t-desc">사전</td><td class="t-desc">백버퍼를 검정으로 초기화</td></tr>
+          <tr><td class="t-real">ClearDepthStencil()</td><td class="t-desc">사전</td><td class="t-desc">깊이 버퍼를 1.0으로 리셋</td></tr>
+          <tr><td class="t-real">OMSetRenderTargets()</td><td class="t-name" style="color:var(--accent-green)">OM</td><td class="t-desc">RTV + DSV를 출력 대상으로 지정</td></tr>
+          <tr><td class="t-real">VSSetShader()</td><td class="t-name" style="color:var(--accent)">VS</td><td class="t-desc">버텍스 셰이더 바인딩</td></tr>
+          <tr><td class="t-real">PSSetShader()</td><td class="t-name" style="color:var(--accent)">PS</td><td class="t-desc">픽셀 셰이더 바인딩</td></tr>
+          <tr><td class="t-real">IASetInputLayout()</td><td class="t-name" style="color:var(--accent-orange)">IA</td><td class="t-desc">정점 해석 방법 설정</td></tr>
+          <tr><td class="t-real">IASetPrimitiveTopology()</td><td class="t-name" style="color:var(--accent-orange)">IA</td><td class="t-desc">"삼각형 리스트"로 해석</td></tr>
+          <tr><td class="t-real">IASetVertexBuffers()</td><td class="t-name" style="color:var(--accent-orange)">IA</td><td class="t-desc">정점 데이터 바인딩</td></tr>
+          <tr><td class="t-real">IASetIndexBuffer()</td><td class="t-name" style="color:var(--accent-orange)">IA</td><td class="t-desc">인덱스 데이터 바인딩</td></tr>
+          <tr><td class="t-real" style="color:var(--accent-green);font-weight:700">DrawIndexed(3)</td><td class="t-name" style="color:var(--accent-green)">전체</td><td class="t-desc">GPU가 IA→VS→RS→PS→OM 실행!</td></tr>
+          <tr><td class="t-real">Present()</td><td class="t-desc">후처리</td><td class="t-desc">백↔프론트 버퍼 교체</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- 파이프라인 스텝 하이라이트 -->
+    <h3>코드 줄 → 파이프라인 단계 하이라이트</h3>
+    <p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">코드 줄에 마우스를 올리면 해당 파이프라인 단계가 하이라이트돼.</p>
+
+    <div style="margin:20px 0">
+      <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:16px" id="pipeBoxes">
+        <div class="mem-cell free" data-pipe="clear" style="min-width:50px">Clear</div>
+        <div class="mem-cell free" data-pipe="om" style="min-width:50px">OM</div>
+        <div class="mem-cell free" data-pipe="ia" style="min-width:50px">IA</div>
+        <div class="mem-cell free" data-pipe="vs" style="min-width:50px">VS</div>
+        <div class="mem-cell free" data-pipe="rs" style="min-width:50px">RS</div>
+        <div class="mem-cell free" data-pipe="ps" style="min-width:50px">PS</div>
+        <div class="mem-cell free" data-pipe="draw" style="min-width:50px">Draw</div>
+        <div class="mem-cell free" data-pipe="present" style="min-width:50px">Present</div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:2px;font-family:var(--font-code);font-size:11px" id="pipeLines">
+        <div class="mem-step" data-highlight="clear" style="padding:6px 12px;cursor:pointer"><code>ClearBackBuffer(_clearColor)</code></div>
+        <div class="mem-step" data-highlight="clear" style="padding:6px 12px;cursor:pointer"><code>ClearDepthStencil(1.f, 0)</code></div>
+        <div class="mem-step" data-highlight="om" style="padding:6px 12px;cursor:pointer"><code>SetTarget() → OMSetRenderTargets</code></div>
+        <div class="mem-step" data-highlight="vs" style="padding:6px 12px;cursor:pointer"><code>VSSetShader(_vs)</code></div>
+        <div class="mem-step" data-highlight="ps" style="padding:6px 12px;cursor:pointer"><code>PSSetShader(_ps)</code></div>
+        <div class="mem-step" data-highlight="ia" style="padding:6px 12px;cursor:pointer"><code>IASetInputLayout + IASetVertexBuffers + IASetIndexBuffer</code></div>
+        <div class="mem-step" data-highlight="draw" style="padding:6px 12px;cursor:pointer;font-weight:700;color:var(--accent-green)"><code>DrawIndexed(3) → IA→VS→RS→PS→OM 전체 실행!</code></div>
+        <div class="mem-step" data-highlight="present" style="padding:6px 12px;cursor:pointer"><code>Present(0, 0) → 백↔프론트 교체</code></div>
+      </div>
+    </div>
+
+    <!-- 삼각형 색상 -->
+    <h2 id="color">삼각형이 빨+초+파 인 이유</h2>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> 정점별 색상 <span class="filename">Core/MeshManager.cpp</span></div>
+<pre><span class="tp">FVertexColor</span> triangle[<span class="num">3</span>]
+{
+    <span class="tp">FVertexColor</span>(<span class="num">0.f</span>, <span class="num">0.5f</span>, <span class="num">0.f</span>, <span class="num">1.f</span>, <span class="num">0.f</span>, <span class="num">0.f</span>, <span class="num">1.f</span>),     <span class="cm">// 위: 빨강 (1,0,0)</span>
+    <span class="tp">FVertexColor</span>(<span class="num">0.5f</span>, <span class="num">-0.5f</span>, <span class="num">0.f</span>, <span class="num">0.f</span>, <span class="num">1.f</span>, <span class="num">0.f</span>, <span class="num">1.f</span>),   <span class="cm">// 오른쪽: 초록 (0,1,0)</span>
+    <span class="tp">FVertexColor</span>(<span class="num">-0.5f</span>, <span class="num">-0.5f</span>, <span class="num">0.f</span>, <span class="num">0.f</span>, <span class="num">0.f</span>, <span class="num">1.f</span>, <span class="num">1.f</span>)  <span class="cm">// 왼쪽: 파랑 (0,0,1)</span>
+};</pre>
+    </div>
+    <p>래스터라이저(RS)가 꼭짓점 사이의 픽셀을 <strong>보간(interpolation)</strong>하니까, 삼각형 내부가 그라데이션으로 칠해져.</p>
+
+    <!-- 삼각형 Canvas -->
+    <div class="mem-scene">
+      <div class="mem-scene-title">렌더링 결과 — NDC 좌표계 위의 삼각형</div>
+      <canvas id="triCanvas" width="320" height="320" style="display:block;margin:0 auto;border-radius:8px;background:#000"></canvas>
+      <div style="display:flex;justify-content:center;gap:16px;margin-top:8px;font-size:10px;color:var(--text-secondary)">
+        <span style="color:#ff4444">● v0 (빨강)</span>
+        <span style="color:#44ff44">● v1 (초록)</span>
+        <span style="color:#4444ff">● v2 (파랑)</span>
+      </div>
+    </div>
+
+    <!-- MemoryPool UB -->
+    <h2 id="mempool">MemoryPool UB 수정</h2>
+
+    <div class="compare-grid">
+      <div class="compare-item bad">
+        <div class="compare-label">이전 (UB!)</div>
+        <div class="code-block" style="margin-bottom:0">
+          <div class="code-header"><span class="lang">C++</span></div>
+<pre><span class="tp">void</span>* <span class="kw">operator</span> <span class="kw">new</span>(<span class="tp">size_t</span> size)
+{
+    <span class="tp">FSegment</span> seg = ....<span class="fn">Rent</span>((<span class="tp">int</span>)size);
+    <span class="tp">Object</span>* obj = (<span class="tp">Object</span>*)seg._Data;
+    obj-&gt;_Segment = seg; <span class="cm">// ← 생성자 전!</span>
+    <span class="kw">return</span> seg._Data;
+}</pre>
+        </div>
+      </div>
+      <div class="compare-item good">
+        <div class="compare-label">현재 (안전)</div>
+        <div class="code-block" style="margin-bottom:0">
+          <div class="code-header"><span class="lang">C++</span></div>
+<pre><span class="tp">void</span>* <span class="kw">operator</span> <span class="kw">new</span>(<span class="tp">size_t</span> size)
+{
+    <span class="tp">FSegment</span> seg = ....<span class="fn">Rent</span>((<span class="tp">int</span>)size);
+    <span class="kw">return</span> seg._Data; <span class="cm">// 객체 안 건드림</span>
+}
+<span class="tp">void</span> <span class="kw">operator</span> <span class="kw">delete</span>(<span class="tp">void</span>* ptr)
+{
+    ....<span class="fn">Return</span>(ptr); <span class="cm">// _rentals에서 검색</span>
+}</pre>
+        </div>
+      </div>
+    </div>
+    <p>MemoryPool이 <code>_rentals</code> 맵(<code>unordered_map&lt;void*, FSegment&gt;</code>)으로 내부에서 대여 기록 추적. operator new/delete가 <code>_Segment</code> 멤버를 더 이상 사용하지 않음.</p>
+
+    <!-- UB 메모리 시각화 -->
+    <div class="mem-scene">
+      <div class="mem-scene-title">왜 UB인지 — 메모리 관점</div>
+      <div class="compare-grid">
+        <div class="compare-item bad" style="text-align:center">
+          <div class="compare-label">이전 — 생성자 전 접근</div>
+          <div style="margin:12px 0">
+            <div class="mem-cell dead" style="min-width:140px;height:auto;padding:8px;text-decoration:none;font-size:10px">
+              seg._Data 메모리<br>
+              <span style="color:var(--accent-red)">??? (미초기화)</span>
+            </div>
+            <div style="font-size:10px;color:var(--accent-red);margin-top:4px">↑ obj->_Segment = seg<br>생성자 전에 접근! UB!</div>
+          </div>
+        </div>
+        <div class="compare-item good" style="text-align:center">
+          <div class="compare-label">현재 — 외부 추적</div>
+          <div style="margin:12px 0">
+            <div class="mem-cell rent" style="min-width:140px;height:auto;padding:8px;font-size:10px">
+              seg._Data 메모리<br>
+              <span style="color:var(--accent-green)">(건드리지 않음)</span>
+            </div>
+            <div style="font-size:10px;color:var(--accent-green);margin-top:4px">↓ _rentals[ptr] = seg<br>MemoryPool 내부에서 추적</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="page-nav" id="page-nav"></div>
+
+  <script>
+  var PAGE_ID = "0006_01";
+  var ON_THIS_PAGE = [
+    { id: "files", label: "변경 파일" },
+    { id: "render", label: "GameEngine::Render()" },
+    { id: "trace", label: "한 줄씩 추적" },
+    { id: "mapping", label: "코드 ↔ 파이프라인" },
+    { id: "color", label: "삼각형 색상 + Canvas" },
+    { id: "mempool", label: "MemoryPool UB 수정" },
+  ];
+  </script>
+  <script src="nav.js"></script>
+
+  <!-- Pipeline highlight + Triangle Canvas -->
+  <script>
+  (function(){
+    // Pipeline highlight on hover
+    var boxes = document.querySelectorAll('#pipeBoxes .mem-cell');
+    var lines = document.querySelectorAll('#pipeLines .mem-step');
+
+    function clearHighlight() {
+      boxes.forEach(function(b) {
+        b.className = 'mem-cell free';
+      });
+      lines.forEach(function(l) {
+        l.style.background = '';
+      });
+    }
+
+    lines.forEach(function(line) {
+      line.addEventListener('mouseenter', function() {
+        clearHighlight();
+        var target = this.dataset.highlight;
+        this.style.background = 'var(--bg-card-hover)';
+
+        if (target === 'draw') {
+          boxes.forEach(function(b) {
+            b.className = 'mem-cell rent';
+          });
+        } else {
+          boxes.forEach(function(b) {
+            if (b.dataset.pipe === target) {
+              b.className = 'mem-cell used';
+            }
+          });
+        }
+      });
+      line.addEventListener('mouseleave', clearHighlight);
+    });
+
+    // Triangle Canvas — barycentric interpolation
+    var canvas = document.getElementById('triCanvas');
+    if (!canvas) return;
+    var ctx = canvas.getContext('2d');
+    var S = 320;
+
+    // NDC to canvas: x(-1~1)→(0~S), y(-1~1)→(S~0) (y flipped)
+    function ndcToCanvas(nx, ny) {
+      return { x: (nx + 1) * 0.5 * S, y: (1 - ny) * 0.5 * S };
+    }
+
+    var v0 = ndcToCanvas(0, 0.5);
+    var v1 = ndcToCanvas(0.5, -0.5);
+    var v2 = ndcToCanvas(-0.5, -0.5);
+
+    // Draw grid
+    ctx.strokeStyle = '#ffffff0a';
+    for (var i = 0; i <= S; i += 40) {
+      ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, S); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(S, i); ctx.stroke();
+    }
+    // Axes
+    ctx.strokeStyle = '#ffffff15';
+    ctx.beginPath(); ctx.moveTo(S/2, 0); ctx.lineTo(S/2, S); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, S/2); ctx.lineTo(S, S/2); ctx.stroke();
+
+    // Barycentric fill
+    var minX = Math.min(v0.x, v1.x, v2.x);
+    var maxX = Math.max(v0.x, v1.x, v2.x);
+    var minY = Math.min(v0.y, v1.y, v2.y);
+    var maxY = Math.max(v0.y, v1.y, v2.y);
+
+    var denom = (v1.y - v2.y) * (v0.x - v2.x) + (v2.x - v1.x) * (v0.y - v2.y);
+
+    for (var px = minX; px < maxX; px += 2) {
+      for (var py = minY; py < maxY; py += 2) {
+        var w0 = ((v1.y - v2.y) * (px - v2.x) + (v2.x - v1.x) * (py - v2.y)) / denom;
+        var w1 = ((v2.y - v0.y) * (px - v2.x) + (v0.x - v2.x) * (py - v2.y)) / denom;
+        var w2 = 1 - w0 - w1;
+
+        if (w0 >= 0 && w1 >= 0 && w2 >= 0) {
+          var r = Math.floor(w0 * 255);
+          var g = Math.floor(w1 * 255);
+          var b = Math.floor(w2 * 255);
+          ctx.fillStyle = 'rgb(' + r + ',' + g + ',' + b + ')';
+          ctx.fillRect(px, py, 2, 2);
+        }
+      }
+    }
+
+    // Wireframe
+    ctx.strokeStyle = '#ffffff44';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(v0.x, v0.y); ctx.lineTo(v1.x, v1.y); ctx.lineTo(v2.x, v2.y); ctx.closePath();
+    ctx.stroke();
+
+    // Vertex dots + labels
+    var verts = [
+      {p: v0, label: 'v0 (0, 0.5)', color: '#ff4444'},
+      {p: v1, label: 'v1 (0.5, -0.5)', color: '#44ff44'},
+      {p: v2, label: 'v2 (-0.5, -0.5)', color: '#4444ff'}
+    ];
+    verts.forEach(function(v) {
+      ctx.fillStyle = v.color;
+      ctx.beginPath(); ctx.arc(v.p.x, v.p.y, 4, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = '#ffffffaa';
+      ctx.font = '9px "Fira Code", monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(v.label, v.p.x, v.p.y - 8);
+    });
+
+    // NDC axis labels
+    ctx.fillStyle = '#ffffff33';
+    ctx.font = '9px "Fira Code", monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('x', S - 8, S/2 - 4);
+    ctx.fillText('y', S/2 + 8, 12);
+    ctx.fillText('(0,0)', S/2 + 16, S/2 + 12);
+  })();
+  </script>
+  </main>
+</body>
+</html>

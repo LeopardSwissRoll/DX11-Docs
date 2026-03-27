@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DX11 학습 노트</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Header -->
+  <header class="header">
+    <button class="hamburger" id="hamburger" aria-label="메뉴 열기">
+      <span></span><span></span><span></span>
+    </button>
+    <div class="header-logo">
+      DX11 NOTE<span class="subtitle">DirectX 11 학습 기록</span>
+    </div>
+    <button class="theme-toggle" id="themeToggle" aria-label="테마 전환">
+      <span class="theme-toggle-icon"></span>
+    </button>
+  </header>
+
+  <!-- Sidebar Overlay -->
+  <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+  <!-- Sidebar -->
+  <nav class="sidebar" id="sidebar"></nav>
+
+  <!-- Main -->
+  <main class="main-content">
+    <div class="hero fade-in">
+      <h1>DIRECTX 11<br>학습 노트</h1>
+      <p class="hero-sub">
+        KDT6 DX11 수업의 매 수업 내용을 정리한 학습 기록.
+        <br>코드 변경분 분석, 핵심 개념 설명, 비유를 통한 이해.
+      </p>
+    </div>
+
+    <div class="lesson-grid" id="lesson-grid"></div>
+
+    <script>var PAGE_ID = "index";</script>
+    <script src="nav.js"></script>
+  </main>
+</body>
+</html>

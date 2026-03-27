@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Day01 — Win32 게임 프레임워크 | DX11 노트</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Header -->
+  <header class="header">
+    <button class="hamburger" id="hamburger" aria-label="메뉴 열기">
+      <span></span><span></span><span></span>
+    </button>
+    <div class="header-logo">
+      <a href="index.html" style="color:inherit;text-decoration:none">DX11 NOTE</a>
+      <span class="subtitle">Day 01</span>
+    </div>
+    <button class="theme-toggle" id="themeToggle" aria-label="테마 전환">
+      <span class="theme-toggle-icon"></span>
+    </button>
+  </header>
+
+  <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+  <!-- Sidebar -->
+  <nav class="sidebar" id="sidebar"></nav>
+
+  <!-- Main -->
+  <main class="main-content content">
+    <div class="page-title fade-in">
+      <span class="tag tag-day">DAY 01</span>
+      <h1>Win32 기반 2D 게임<br>프레임워크 초기 구조</h1>
+      <p class="page-desc">PeekMessage 게임 루프, CRTP 싱글톤, Object/ObjectPool — 게임 엔진의 뼈대를 세우는 첫 수업.</p>
+    </div>
+
+    <!-- 변경 파일 -->
+    <h2 id="files">변경된 파일</h2>
+    <div class="file-grid fade-in fade-in-d1">
+      <div class="file-card">
+        <div class="file-icon cpp">cpp</div>
+        <div><div class="file-name">Client.cpp</div><div class="file-role">프로그램 진입점, 메시지 루프</div></div>
+      </div>
+      <div class="file-card">
+        <div class="file-icon h">h</div>
+        <div><div class="file-name">Client.h</div><div class="file-role">클라이언트 헤더</div></div>
+      </div>
+      <div class="file-card">
+        <div class="file-icon h">h</div>
+        <div><div class="file-name">framework.h</div><div class="file-role">Windows API 헤더 모음</div></div>
+      </div>
+      <div class="file-card">
+        <div class="file-icon h">h</div>
+        <div><div class="file-name">targetver.h</div><div class="file-role">SDK 버전 정의</div></div>
+      </div>
+      <div class="file-card">
+        <div class="file-icon h">h</div>
+        <div><div class="file-name">Info.h</div><div class="file-role">객체 타입 열거형</div></div>
+      </div>
+      <div class="file-card">
+        <div class="file-icon h">h</div>
+        <div><div class="file-name">Singleton.h</div><div class="file-role">CRTP 싱글톤 템플릿</div></div>
+      </div>
+      <div class="file-card">
+        <div class="file-icon h">h</div>
+        <div><div class="file-name">Object.h</div><div class="file-role">게임 객체 기본 클래스</div></div>
+      </div>
+      <div class="file-card">
+        <div class="file-icon cpp">cpp</div>
+        <div><div class="file-name">Object.cpp</div><div class="file-role">Object 구현</div></div>
+      </div>
+      <div class="file-card">
+        <div class="file-icon h">h</div>
+        <div><div class="file-name">ObjectPool.h</div><div class="file-role">객체 풀 매니저</div></div>
+      </div>
+      <div class="file-card">
+        <div class="file-icon cpp">cpp</div>
+        <div><div class="file-name">ObjectPool.cpp</div><div class="file-role">ObjectPool 구현</div></div>
+      </div>
+      <div class="file-card">
+        <div class="file-icon h">h</div>
+        <div><div class="file-name">TestObject.h</div><div class="file-role">테스트 객체</div></div>
+      </div>
+      <div class="file-card">
+        <div class="file-icon cpp">cpp</div>
+        <div><div class="file-name">TestObject.cpp</div><div class="file-role">TestObject 구현</div></div>
+      </div>
+      <div class="file-card">
+        <div class="file-icon rc">rc</div>
+        <div><div class="file-name">Resource.h</div><div class="file-role">리소스 ID 정의</div></div>
+      </div>
+    </div>
+
+    <!-- 핵심 개념 -->
+    <h2 id="concepts">핵심 개념 요약</h2>
+
+    <!-- 1. PeekMessage -->
+    <div class="concept-card fade-in fade-in-d2" id="peekmessage">
+      <div class="concept-num">CONCEPT 01</div>
+      <div class="concept-title">PeekMessage 기반 게임 루프</div>
+      <div class="concept-desc">
+        일반 Windows 앱은 <code>GetMessage()</code>로 메시지를 기다리는데, 이건 메시지가 올 때까지 <strong>블로킹</strong>(멈춤)한다.
+        게임은 매 프레임 계속 돌아야 하니까 <code>PeekMessage()</code>를 써서 <strong>논블로킹</strong>으로 처리한다.
+      </div>
+    </div>
+
+    <div class="compare-grid">
+      <div class="compare-item bad">
+        <div class="compare-label">GetMessage — 블로킹</div>
+        <p style="font-size:13px;color:var(--text-secondary)">메시지 없으면 멈춤. 일반 앱(메모장 등)에 적합.</p>
+      </div>
+      <div class="compare-item good">
+        <div class="compare-label">PeekMessage — 논블로킹</div>
+        <p style="font-size:13px;color:var(--text-secondary)">메시지 없어도 바로 리턴. 게임 루프에 적합.</p>
+      </div>
+    </div>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> PeekMessage 게임 루프 <span class="filename">Client.cpp</span></div>
+<pre><span class="kw">while</span> (<span class="kw">true</span>)
+{
+    <span class="kw">if</span> (<span class="fn">PeekMessage</span>(&amp;msg, <span class="kw">nullptr</span>, <span class="num">0</span>, <span class="num">0</span>, <span class="mc">PM_REMOVE</span>))
+    {
+        <span class="cm">// 메시지가 있다</span>
+        <span class="kw">if</span> (msg.message == <span class="mc">WM_QUIT</span>)
+            <span class="kw">break</span>;
+
+        <span class="cm">// 단축키 관련 내용이면 TranslateAccelerator 처리</span>
+        <span class="kw">if</span> (!<span class="fn">TranslateAccelerator</span>(msg.hwnd, hAccelTable, &amp;msg))
+        {
+            <span class="fn">TranslateMessage</span>(&amp;msg);
+            <span class="fn">DispatchMessage</span>(&amp;msg);   <span class="cm">// → WndProc 호출</span>
+        }
+    }
+    <span class="kw">else</span>
+    {
+        <span class="cm">// 윈도우 데드타임 → 게임 로직!</span>
+        <span class="cm">// Logic();</span>
+    }
+}</pre>
+    </div>
+
+    <div class="analogy-box">
+      <div class="analogy-header">
+        <span class="analogy-icon">🏪</span>
+        <span class="analogy-title">ANALOGY — 편의점 알바 비유</span>
+      </div>
+      <div class="analogy-content">
+        <strong>PeekMessage</strong> = 손님 있나 <strong>힐끗</strong> 보고, 없으면 진열대 정리(게임 로직) 하는 것.<br>
+        <strong>GetMessage</strong> = 손님 올 때까지 카운터에서 <strong>멍하니 기다리는</strong> 것.<br><br>
+        게임은 1초에 60번 이상 화면을 그려야 하니까, 멍하니 기다리면 안 된다!
+      </div>
+    </div>
+
+    <!-- 2. CRTP Singleton -->
+    <div class="concept-card fade-in" id="singleton">
+      <div class="concept-num">CONCEPT 02</div>
+      <div class="concept-title">CRTP 싱글톤 패턴</div>
+      <div class="concept-desc">
+        <strong>CRTP (Curiously Recurring Template Pattern)</strong> — 자식 클래스가 자기 자신을 템플릿 인자로 넘기는 패턴.
+        싱글톤(전역 인스턴스 하나)을 만들 때 상속만으로 쉽게 적용할 수 있다.
+      </div>
+    </div>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> CRTP Singleton <span class="filename">Singleton.h</span></div>
+<pre><span class="kw">template</span>&lt;<span class="kw">typename</span> <span class="tp">T</span>&gt;
+<span class="kw">class</span> <span class="tp">Singleton</span>
+{
+<span class="kw">public</span>:
+    <span class="kw">static</span> <span class="tp">T</span>&amp; <span class="fn">Instance</span>() {
+        <span class="kw">static</span> <span class="tp">T</span> Inst;      <span class="cm">// 프로그램 전체에서 딱 하나</span>
+        <span class="kw">return</span> Inst;
+    }
+    <span class="cm">// 복사/이동 생성자, 대입 연산자 삭제 → 인스턴스 하나 보장</span>
+};
+
+<span class="cm">// 사용법: 자기 자신을 넘긴다!</span>
+<span class="kw">class</span> <span class="tp">ObjectPool</span> : <span class="kw">public</span> <span class="tp">Singleton</span>&lt;<span class="tp">ObjectPool</span>&gt; { ... };</pre>
+    </div>
+
+    <div class="info-box">
+      <div class="info-label">WHY CRTP?</div>
+      <code>Singleton&lt;ObjectPool&gt;::Instance()</code>가 <code>ObjectPool&amp;</code>를 반환하도록 <strong>컴파일 타임에 타입이 결정</strong>되니까.
+      캐스팅 없이 바로 쓸 수 있어서 편하고 안전하다.
+    </div>
+
+    <!-- 3. Object -->
+    <div class="concept-card fade-in" id="object">
+      <div class="concept-num">CONCEPT 03</div>
+      <div class="concept-title">Object 기본 클래스</div>
+      <div class="concept-desc">
+        게임 객체(플레이어, 몬스터, 총알 등)가 공통으로 가질 속성을 정의한 <strong>추상 클래스</strong>.
+      </div>
+    </div>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> 핵심 멤버 변수 <span class="filename">Object.h</span></div>
+<pre><span class="kw">class</span> <span class="tp">Object</span>
+{
+    <span class="kw">friend</span> <span class="kw">class</span> <span class="tp">ObjectPool</span>;
+
+<span class="kw">private</span>:
+    <span class="tp">bool</span>        _bEnable = <span class="kw">false</span>;    <span class="cm">// 활성 상태? (살아있지만 일시 비활성 가능)</span>
+    <span class="tp">bool</span>        _bActive = <span class="kw">false</span>;    <span class="cm">// 살아있나? (false면 삭제 대상)</span>
+    <span class="tp">bool</span>        _IsPooled = <span class="kw">false</span>;   <span class="cm">// 풀에서 빌려온 객체인가?</span>
+    <span class="tp">eObjectType</span> _Type = <span class="tp">eObjectType</span>::<span class="mc">END</span>;  <span class="cm">// 객체 종류</span>
+
+<span class="kw">public</span>:
+    <span class="kw">virtual</span> <span class="kw">void</span> <span class="fn">Destroy</span>() = <span class="num">0</span>;  <span class="cm">// 순수 가상 → 자식이 반드시 구현</span>
+};</pre>
+    </div>
+
+    <div class="info-box">
+      <div class="info-label">ACTIVE vs ENABLE</div>
+      <strong>Active</strong> = 존재 여부 (false면 오브젝트 자체가 사라짐)<br>
+      <strong>Enable</strong> = 활성 여부 (살아있지만 일시적으로 멈출 수 있음 — 예: 빙결 상태)
+    </div>
+
+    <!-- 4. ObjectPool -->
+    <div class="concept-card fade-in" id="objectpool">
+      <div class="concept-num">CONCEPT 04</div>
+      <div class="concept-title">ObjectPool — 객체 재사용 시스템</div>
+      <div class="concept-desc">
+        게임에서 총알, 이펙트 같은 건 수백 개씩 생겼다 사라진다.
+        매번 <code>new/delete</code> 하면 느려지니까, 다 쓴 객체를 <strong>삭제하지 않고 풀에 반환</strong>해서 재사용한다.
+      </div>
+    </div>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> 풀 구조 <span class="filename">ObjectPool.h</span></div>
+<pre><span class="cm">// 타입별로 큐를 가진 맵</span>
+<span class="tp">std::map</span>&lt;<span class="tp">eObjectType</span>, <span class="tp">std::queue</span>&lt;<span class="tp">Object</span>*&gt;&gt; _Pools;
+
+<span class="cm">// 빌리기: 풀에 있으면 꺼내고, 없으면 new</span>
+<span class="tp">T</span>* <span class="fn">Rent</span>() { ... }
+
+<span class="cm">// 반환: delete 하지 않고 풀에 다시 넣기</span>
+<span class="kw">void</span> <span class="fn">Return</span>(<span class="tp">Object</span>* obj) { ... }</pre>
+    </div>
+
+    <div class="analogy-box">
+      <div class="analogy-header">
+        <span class="analogy-icon">🎳</span>
+        <span class="analogy-title">ANALOGY — 볼링장 비유</span>
+      </div>
+      <div class="analogy-content">
+        볼링공을 한 번 던질 때마다 <strong>새 공을 사고, 던진 후 부수는</strong> 건 미친 짓이잖아?<br>
+        던진 공이 레일을 타고 돌아오면 <strong>다시 집어서</strong> 던지면 되는 거야.<br><br>
+        <strong>Rent()</strong> = 공을 집는 것 / <strong>Return()</strong> = 공이 레일로 돌아오는 것
+      </div>
+    </div>
+
+    <!-- 5. Win32 Flow -->
+    <h2 id="win32flow">Win32 윈도우 생성 흐름</h2>
+
+    <div class="flow-diagram"><span class="flow-fn">wWinMain()</span>           <span class="flow-desc">← 프로그램 진입점 (= main)</span>
+  <span class="flow-arrow">│</span>
+  <span class="flow-arrow">├─▶</span> <span class="flow-fn">MyRegisterClass()</span>  <span class="flow-desc">← 창 설계도를 OS에 등록</span>
+  <span class="flow-arrow">│</span>     <span class="flow-desc">WNDCLASSEXW 구조체에 아이콘, 커서, 배경색, 콜백함수(WndProc) 설정</span>
+  <span class="flow-arrow">│</span>
+  <span class="flow-arrow">├─▶</span> <span class="flow-fn">InitInstance()</span>      <span class="flow-desc">← 실제 창 생성</span>
+  <span class="flow-arrow">│</span>     <span class="flow-fn">CreateWindowW()</span> → <span class="flow-fn">ShowWindow()</span> → <span class="flow-fn">UpdateWindow()</span>
+  <span class="flow-arrow">│</span>
+  <span class="flow-arrow">└─▶</span> <span class="flow-highlight">메시지 루프</span>          <span class="flow-desc">← PeekMessage 기반 게임 루프</span>
+        <span class="flow-arrow">├─</span> 메시지 있음 → <span class="flow-fn">DispatchMessage()</span> → <span class="flow-fn">WndProc()</span>
+        <span class="flow-arrow">└─</span> 메시지 없음 → <span class="flow-highlight">게임 로직 (TODO)</span></div>
+
+    <!-- 미구현 -->
+    <h2 id="todo">아직 구현 안 된 것들</h2>
+    <div class="warn-box">
+      <div class="warn-label">TODO</div>
+      <ul style="padding-left:20px; color:var(--text-secondary);">
+        <li>DirectX 11 디바이스 / 스왑체인 초기화</li>
+        <li>게임 로직 — Update() / Render()</li>
+        <li>입력 처리 (키보드 / 마우스)</li>
+        <li>TestObject의 실제 동작</li>
+        <li>ObjectPool의 Init / Destroy</li>
+      </ul>
+    </div>
+
+    <!-- Prev / Next -->
+    <div class="page-nav" id="page-nav"></div>
+
+    <script>
+    var PAGE_ID = "0001_01";
+    var ON_THIS_PAGE = [
+      { id: "files", label: "변경 파일" },
+      { id: "concepts", label: "핵심 개념" },
+      { id: "peekmessage", label: "PeekMessage 루프" },
+      { id: "singleton", label: "CRTP 싱글톤" },
+      { id: "object", label: "Object 클래스" },
+      { id: "objectpool", label: "ObjectPool" },
+      { id: "win32flow", label: "Win32 흐름" },
+      { id: "todo", label: "미구현 항목" },
+    ];
+    </script>
+    <script src="nav.js"></script>
+  </main>
+</body>
+</html>

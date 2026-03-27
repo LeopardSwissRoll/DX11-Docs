@@ -1,0 +1,901 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>스마트 포인터 정리 | DX11 노트</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Header -->
+  <header class="header">
+    <button class="hamburger" id="hamburger" aria-label="메뉴 열기">
+      <span></span><span></span><span></span>
+    </button>
+    <div class="header-logo">
+      <a href="index.html" style="color:inherit;text-decoration:none">DX11 NOTE</a>
+      <span class="subtitle">Deep Dive</span>
+    </div>
+    <button class="theme-toggle" id="themeToggle" aria-label="테마 전환">
+      <span class="theme-toggle-icon"></span>
+    </button>
+  </header>
+
+  <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+  <!-- Sidebar -->
+  <nav class="sidebar" id="sidebar"></nav>
+
+  <!-- Main -->
+  <main class="main-content content">
+    <div class="page-title fade-in">
+      <span class="tag tag-detail">DEEP DIVE</span>
+      <h1>shared_ptr / weak_ptr<br>enable_shared_from_this</h1>
+      <p class="page-desc">
+        스마트 포인터 — 메모리 누수와 댕글링 포인터를 자동으로 방지하는 C++ 무기
+      </p>
+    </div>
+
+    <!-- ============================== -->
+    <!-- 왜 스마트 포인터? -->
+    <!-- ============================== -->
+    <h2 id="why">왜 스마트 포인터?</h2>
+
+    <p>
+      C++에서 <code>new</code>로 메모리를 할당하면, 반드시 <code>delete</code>로 해제해야 한다.
+      이걸 잊으면? <strong>메모리 누수(memory leak)</strong>. 두 번 하면? <strong>크래시(double free)</strong>.
+      포인터가 가리키던 메모리가 이미 해제됐는데 접근하면? <strong>댕글링 포인터(dangling pointer)</strong>.
+    </p>
+
+    <p>
+      게임 엔진처럼 오브젝트가 수백 개 생기고 사라지는 환경에서 이걸 수동으로 관리하는 건
+      지뢰밭 위를 뛰어다니는 것과 같다. 그래서 C++11부터 <strong>스마트 포인터</strong>가 표준에 들어왔다.
+    </p>
+
+    <h3>생 포인터(raw pointer)의 문제</h3>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> 메모리 누수 예시</div>
+<pre><span class="kw">void</span> <span class="fn">Dangerous</span>()
+{
+    <span class="tp">TestObject</span>* obj = <span class="kw">new</span> <span class="tp">TestObject</span>();  <span class="cm">// 힙에 할당</span>
+
+    <span class="cm">// ... 여기서 예외가 터지거나 return을 하면?</span>
+    <span class="kw">if</span> (someCondition)
+        <span class="kw">return</span>;  <span class="cm">// delete를 안 하고 빠져나감!</span>
+
+    <span class="kw">delete</span> obj;  <span class="cm">// 여기까지 안 올 수도 있다</span>
+}</pre>
+    </div>
+
+    <!-- 생 포인터 문제 시각화 -->
+    <div class="mem-scene fade-in">
+      <div class="mem-scene-title">생 포인터 — 메모리 누수 시각화</div>
+
+      <p style="font-size:13px;color:var(--text-secondary);margin-bottom:12px;">
+        <strong style="color:var(--accent);">Step 1</strong> — 함수 진입: 포인터가 힙 메모리를 가리킴
+      </p>
+      <div class="mem-row">
+        <div class="mem-ptr-box">
+          <span class="ptr-name">obj</span>
+          <span class="ptr-arrow">--&gt;</span>
+        </div>
+        <div class="mem-arrow">--&gt;</div>
+        <div class="mem-cell used mem-cell-wide">TestObject</div>
+      </div>
+
+      <p style="font-size:13px;color:var(--text-secondary);margin-bottom:12px;margin-top:16px;">
+        <strong style="color:var(--accent-red);">Step 2</strong> — 함수 중간에 return: 포인터(스택)는 사라지고, 메모리(힙)는 남음
+      </p>
+      <div class="mem-row">
+        <div class="mem-ptr-box" style="opacity:0.3;text-decoration:line-through;">
+          <span class="ptr-name">obj</span>
+          <span class="ptr-arrow">X</span>
+        </div>
+        <div class="mem-arrow" style="opacity:0.3;">--&gt;</div>
+        <div class="mem-cell dead mem-cell-wide">LEAKED!</div>
+      </div>
+
+      <p style="font-size:12px;color:var(--accent-red);margin-top:8px;">
+        delete를 안 했으니 메모리가 프로그램 종료까지 영원히 점유된다. 이게 메모리 누수.
+      </p>
+    </div>
+
+    <div class="warn-box">
+      <div class="warn-label">생 포인터의 3대 재앙</div>
+      <strong style="color:var(--accent-red);">1. 메모리 누수</strong> — delete 안 하면 메모리가 계속 쌓인다<br>
+      <strong style="color:var(--accent-red);">2. 댕글링 포인터</strong> — 이미 해제된 메모리를 가리키는 포인터로 접근하면 정의되지 않은 동작<br>
+      <strong style="color:var(--accent-red);">3. Double Free</strong> — 같은 메모리를 두 번 delete하면 크래시
+    </div>
+
+    <!-- ============================== -->
+    <!-- shared_ptr -->
+    <!-- ============================== -->
+    <h2 id="shared-ptr">shared_ptr</h2>
+
+    <p>
+      <code>shared_ptr</code>은 <strong>참조 카운트(reference count)</strong> 기반 스마트 포인터다.
+      여러 개의 <code>shared_ptr</code>이 하나의 객체를 공유할 수 있고,
+      마지막 <code>shared_ptr</code>이 소멸될 때 자동으로 객체가 삭제된다.
+    </p>
+
+    <!-- 비유 박스 -->
+    <div class="analogy-box">
+      <div class="analogy-header">
+        <span class="analogy-icon">📚</span>
+        <span class="analogy-title">ANALOGY — 도서관 대출 카드</span>
+      </div>
+      <div class="analogy-content">
+        <strong>shared_ptr</strong> = <strong>대출 카드</strong><br>
+        책을 빌리면 대출 카운터 +1, 반납하면 -1.<br>
+        카운터가 0이 되면 (아무도 안 빌리면) 그 책은 폐기 처분된다.<br><br>
+        <strong>weak_ptr</strong> = <strong>열람실에서 보기만 하는 것</strong><br>
+        대출 카운터에 포함되지 않는다. 책이 폐기되면 "없음" 표시가 뜬다.<br>
+        열람실에서 보고 있다고 해서 책이 폐기 안 되는 건 아니다!
+      </div>
+    </div>
+
+    <h3>기본 사용법</h3>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> shared_ptr 기본</div>
+<pre><span class="pp">#include</span> &lt;<span class="str">memory</span>&gt;
+
+<span class="kw">class</span> <span class="tp">TestObject</span>
+{
+<span class="kw">public</span>:
+    <span class="fn">TestObject</span>()  { <span class="cm">/* 생성 */</span> }
+    ~<span class="fn">TestObject</span>() { <span class="cm">/* 소멸 — shared_ptr이 자동 호출 */</span> }
+};
+
+<span class="kw">void</span> <span class="fn">Example</span>()
+{
+    <span class="cm">// make_shared: 객체 + 컨트롤 블록을 한 번에 할당 (효율적!)</span>
+    <span class="kw">auto</span> obj = <span class="fn">make_shared</span>&lt;<span class="tp">TestObject</span>&gt;();
+
+    <span class="cm">// use_count()로 현재 참조 카운트 확인</span>
+    <span class="fn">cout</span> &lt;&lt; obj.<span class="fn">use_count</span>() &lt;&lt; <span class="fn">endl</span>;  <span class="cm">// 1</span>
+
+    {
+        <span class="kw">auto</span> obj2 = obj;  <span class="cm">// 복사 → ref_count: 2</span>
+        <span class="fn">cout</span> &lt;&lt; obj.<span class="fn">use_count</span>() &lt;&lt; <span class="fn">endl</span>;  <span class="cm">// 2</span>
+    }   <span class="cm">// obj2 스코프 벗어남 → ref_count: 1</span>
+
+    <span class="fn">cout</span> &lt;&lt; obj.<span class="fn">use_count</span>() &lt;&lt; <span class="fn">endl</span>;  <span class="cm">// 1</span>
+}   <span class="cm">// obj 소멸 → ref_count: 0 → delete 자동 호출!</span></pre>
+    </div>
+
+    <div class="info-box">
+      <div class="info-label">make_shared vs new</div>
+      <code>make_shared&lt;T&gt;()</code>는 객체와 컨트롤 블록(참조 카운트 등)을 <strong>한 번의 메모리 할당</strong>으로 만든다.<br>
+      <code>shared_ptr&lt;T&gt;(new T())</code>는 <strong>두 번</strong> 할당한다 (객체 + 컨트롤 블록 따로).<br>
+      성능과 예외 안전성 모두 <code>make_shared</code>가 우위. 특별한 이유 없으면 항상 <code>make_shared</code>를 쓰자.
+    </div>
+
+    <!-- shared_ptr ref_count 시각화 — 4단계 -->
+    <h3>ref_count 동작 시각화</h3>
+
+    <!-- State 1 -->
+    <div class="mem-scene fade-in fade-in-d1">
+      <div class="mem-scene-title">State 1 — auto obj = make_shared&lt;TestObject&gt;();</div>
+      <div class="mem-row" style="align-items:center;">
+        <div class="mem-ptr-box">
+          <span class="ptr-name">shared_ptr obj</span>
+          <span class="ptr-arrow">--&gt;</span>
+        </div>
+        <div class="mem-arrow">--&gt;</div>
+        <div class="mem-cell used mem-cell-wide" style="min-width:160px;gap:8px;">
+          TestObject &nbsp; <span class="mem-ref active">ref:1</span>
+        </div>
+      </div>
+      <p style="font-size:12px;color:var(--text-secondary);margin-top:8px;">
+        shared_ptr 하나가 객체를 가리킴. 참조 카운트 = 1.
+      </p>
+    </div>
+
+    <!-- State 2 -->
+    <div class="mem-scene fade-in fade-in-d2">
+      <div class="mem-scene-title">State 2 — auto obj2 = obj; (복사)</div>
+      <div class="mem-row" style="align-items:center;">
+        <div class="mem-ptr-box">
+          <span class="ptr-name">shared_ptr obj</span>
+          <span class="ptr-arrow">--&gt;</span>
+        </div>
+        <div class="mem-arrow">--&gt;</div>
+        <div class="mem-cell used mem-cell-wide" style="min-width:160px;gap:8px;">
+          TestObject &nbsp; <span class="mem-ref active">ref:2</span>
+        </div>
+        <div class="mem-arrow">&lt;--</div>
+        <div class="mem-ptr-box">
+          <span class="ptr-name">shared_ptr obj2</span>
+          <span class="ptr-arrow">&lt;--</span>
+        </div>
+      </div>
+      <p style="font-size:12px;color:var(--text-secondary);margin-top:8px;">
+        두 개의 shared_ptr이 같은 객체를 가리킴. 참조 카운트 = 2. <strong style="color:var(--accent-green);">객체는 하나뿐!</strong>
+      </p>
+    </div>
+
+    <!-- State 3 -->
+    <div class="mem-scene fade-in fade-in-d3">
+      <div class="mem-scene-title">State 3 — obj.reset(); (obj 해제)</div>
+      <div class="mem-row" style="align-items:center;">
+        <div class="mem-ptr-box" style="opacity:0.4;">
+          <span class="ptr-name">shared_ptr obj</span>
+          <span style="color:var(--accent-red);">nullptr</span>
+        </div>
+        <div class="mem-arrow" style="opacity:0.2;">X</div>
+        <div class="mem-cell used mem-cell-wide" style="min-width:160px;gap:8px;">
+          TestObject &nbsp; <span class="mem-ref active">ref:1</span>
+        </div>
+        <div class="mem-arrow">&lt;--</div>
+        <div class="mem-ptr-box">
+          <span class="ptr-name">shared_ptr obj2</span>
+          <span class="ptr-arrow">&lt;--</span>
+        </div>
+      </div>
+      <p style="font-size:12px;color:var(--text-secondary);margin-top:8px;">
+        obj가 소유권을 포기함. 아직 obj2가 가리키고 있으니 참조 카운트 = 1. <strong style="color:var(--accent-green);">객체는 살아있다!</strong>
+      </p>
+    </div>
+
+    <!-- State 4 -->
+    <div class="mem-scene fade-in fade-in-d4">
+      <div class="mem-scene-title">State 4 — obj2.reset(); (마지막 참조 해제)</div>
+      <div class="mem-row" style="align-items:center;">
+        <div class="mem-ptr-box" style="opacity:0.4;">
+          <span class="ptr-name">shared_ptr obj</span>
+          <span style="color:var(--accent-red);">nullptr</span>
+        </div>
+        <div class="mem-arrow" style="opacity:0.1;">X</div>
+        <div class="mem-cell dead mem-cell-wide" style="min-width:160px;gap:8px;">
+          DELETED &nbsp; <span class="mem-ref zero">ref:0</span>
+        </div>
+        <div class="mem-arrow" style="opacity:0.1;">X</div>
+        <div class="mem-ptr-box" style="opacity:0.4;">
+          <span class="ptr-name">shared_ptr obj2</span>
+          <span style="color:var(--accent-red);">nullptr</span>
+        </div>
+      </div>
+      <p style="font-size:12px;color:var(--accent-red);margin-top:8px;">
+        참조 카운트 0 → 소멸자 자동 호출 → 메모리 해제! 아무도 관리 안 해도 누수 없음.
+      </p>
+    </div>
+
+    <h3>주요 멤버 함수</h3>
+
+    <div class="type-table-wrap fade-in">
+      <table class="type-table">
+        <thead>
+          <tr>
+            <th>함수</th>
+            <th>설명</th>
+            <th>예시</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="t-name">use_count()</td>
+            <td class="t-desc">현재 참조 카운트 반환</td>
+            <td class="t-real">obj.use_count()</td>
+          </tr>
+          <tr>
+            <td class="t-name">reset()</td>
+            <td class="t-desc">소유권 포기 (카운트 -1)</td>
+            <td class="t-real">obj.reset()</td>
+          </tr>
+          <tr>
+            <td class="t-name">get()</td>
+            <td class="t-desc">생 포인터(raw pointer) 반환</td>
+            <td class="t-real">T* raw = obj.get()</td>
+          </tr>
+          <tr>
+            <td class="t-name">unique()</td>
+            <td class="t-desc">참조 카운트가 1이면 true (C++17 deprecated)</td>
+            <td class="t-real">obj.unique()</td>
+          </tr>
+          <tr>
+            <td class="t-name">operator bool</td>
+            <td class="t-desc">nullptr이 아니면 true</td>
+            <td class="t-real">if (obj) { ... }</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- ============================== -->
+    <!-- weak_ptr -->
+    <!-- ============================== -->
+    <h2 id="weak-ptr">weak_ptr</h2>
+
+    <p>
+      <code>weak_ptr</code>은 <code>shared_ptr</code>이 관리하는 객체를 <strong>참조 카운트를 올리지 않고</strong> 관찰하는 포인터다.
+      객체의 수명에 영향을 주지 않으면서, 객체가 아직 살아있는지 확인할 수 있다.
+    </p>
+
+    <h3>왜 필요한가? — 순환 참조 문제</h3>
+
+    <p>
+      두 객체가 서로를 <code>shared_ptr</code>로 가리키면, 참조 카운트가 절대 0이 되지 않는다.
+      누구도 먼저 죽을 수 없다. 이것이 <strong>순환 참조(circular reference)</strong> 문제다.
+    </p>
+
+    <!-- 순환 참조 시각화 -->
+    <div class="mem-scene fade-in">
+      <div class="mem-scene-title">순환 참조 — 둘 다 절대 해제 안 됨</div>
+      <div class="mem-row" style="align-items:center;justify-content:center;gap:16px;">
+        <div class="mem-cell used mem-cell-wide" style="min-width:140px;flex-direction:column;height:auto;padding:12px;">
+          <span style="font-weight:600;color:var(--accent);">Object A</span>
+          <span style="font-size:9px;color:var(--text-secondary);">shared_ptr&lt;B&gt; --&gt;</span>
+          <span class="mem-ref active" style="margin-top:4px;">ref:1</span>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:2px;color:var(--accent-red);font-family:var(--font-code);font-size:12px;">
+          <span>--shared_ptr--&gt;</span>
+          <span>&lt;--shared_ptr--</span>
+        </div>
+        <div class="mem-cell used mem-cell-wide" style="min-width:140px;flex-direction:column;height:auto;padding:12px;">
+          <span style="font-weight:600;color:var(--accent);">Object B</span>
+          <span style="font-size:9px;color:var(--text-secondary);">shared_ptr&lt;A&gt; --&gt;</span>
+          <span class="mem-ref active" style="margin-top:4px;">ref:1</span>
+        </div>
+      </div>
+      <p style="font-size:12px;color:var(--text-secondary);margin-top:12px;text-align:center;">
+        외부 shared_ptr 해제 후에도: A의 ref_count = 1 (B가 가리킴), B의 ref_count = 1 (A가 가리킴)
+      </p>
+    </div>
+
+    <div class="warn-box">
+      <div class="warn-label">CRITICAL — 순환 참조 = 메모리 누수</div>
+      A가 B를 shared_ptr로, B가 A를 shared_ptr로 가리키면,
+      <strong>외부에서 둘 다 놓아줘도 서로가 서로를 잡고 있어서 ref_count가 0이 안 된다.</strong><br>
+      결과: 소멸자 안 불림, 메모리 영원히 점유. 이건 스마트 포인터를 써도 막을 수 없는 함정!
+    </div>
+
+    <!-- 해결: weak_ptr -->
+    <h3>해결: weak_ptr로 한쪽을 약한 참조로</h3>
+
+    <div class="mem-scene fade-in">
+      <div class="mem-scene-title">weak_ptr로 해결 — 한쪽이 약한 참조</div>
+      <div class="mem-row" style="align-items:center;justify-content:center;gap:16px;">
+        <div class="mem-cell used mem-cell-wide" style="min-width:140px;flex-direction:column;height:auto;padding:12px;">
+          <span style="font-weight:600;color:var(--accent);">Object A</span>
+          <span style="font-size:9px;color:var(--text-secondary);">shared_ptr&lt;B&gt; --&gt;</span>
+          <span class="mem-ref active" style="margin-top:4px;">ref:1</span>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:2px;font-family:var(--font-code);font-size:12px;">
+          <span style="color:var(--accent);">--shared_ptr--&gt;</span>
+          <span style="color:var(--accent-orange);">&lt;--weak_ptr----</span>
+        </div>
+        <div class="mem-cell used mem-cell-wide" style="min-width:140px;flex-direction:column;height:auto;padding:12px;">
+          <span style="font-weight:600;color:var(--accent);">Object B</span>
+          <span style="font-size:9px;color:var(--accent-orange);">weak_ptr&lt;A&gt; (카운트 안 올림!)</span>
+          <span class="mem-ref active" style="margin-top:4px;">ref:1</span>
+        </div>
+      </div>
+      <p style="font-size:12px;color:var(--text-secondary);margin-top:12px;text-align:center;">
+        B의 weak_ptr은 A의 ref_count에 포함 안 됨 → A 삭제 가능 → B의 weak_ptr은 <strong style="color:var(--accent-orange);">expired</strong> 상태가 됨
+      </p>
+    </div>
+
+    <h3>weak_ptr 사용법 — lock() 패턴</h3>
+
+    <p>
+      <code>weak_ptr</code>은 직접 역참조(<code>*</code>, <code>-&gt;</code>)를 할 수 없다.
+      반드시 <code>lock()</code>을 통해 <code>shared_ptr</code>로 변환한 뒤 사용해야 한다.
+      이미 객체가 소멸됐으면 <code>lock()</code>은 빈 <code>shared_ptr</code>을 반환한다.
+    </p>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> weak_ptr lock() 패턴</div>
+<pre><span class="kw">class</span> <span class="tp">Node</span>
+{
+<span class="kw">public</span>:
+    <span class="tp">shared_ptr</span>&lt;<span class="tp">Node</span>&gt; child;     <span class="cm">// 자식은 강한 참조</span>
+    <span class="tp">weak_ptr</span>&lt;<span class="tp">Node</span>&gt;   parent;    <span class="cm">// 부모는 약한 참조 (순환 방지!)</span>
+
+    <span class="kw">void</span> <span class="fn">DoSomethingWithParent</span>()
+    {
+        <span class="cm">// lock()으로 shared_ptr 획득 시도</span>
+        <span class="kw">auto</span> sp = parent.<span class="fn">lock</span>();
+
+        <span class="kw">if</span> (sp)
+        {
+            <span class="cm">// 부모가 아직 살아있음 → 안전하게 사용</span>
+            sp-&gt;<span class="fn">SomeMethod</span>();
+        }
+        <span class="kw">else</span>
+        {
+            <span class="cm">// 부모가 이미 소멸됨 → expired 상태</span>
+            <span class="cm">// 댕글링 포인터 접근 없이 안전하게 처리!</span>
+        }
+    }
+};</pre>
+    </div>
+
+    <div class="info-box">
+      <div class="info-label">weak_ptr 핵심 정리</div>
+      <strong>expired()</strong> — 객체가 이미 소멸됐으면 true 반환<br>
+      <strong>lock()</strong> — 아직 살아있으면 shared_ptr 반환, 소멸됐으면 빈 shared_ptr<br>
+      <strong>use_count()</strong> — 강한 참조(shared_ptr) 개수 반환 (weak 포함 아님!)
+    </div>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> 순환 참조 해결 전체 코드</div>
+<pre><span class="kw">class</span> <span class="tp">A</span>;
+<span class="kw">class</span> <span class="tp">B</span>;
+
+<span class="kw">class</span> <span class="tp">A</span>
+{
+<span class="kw">public</span>:
+    <span class="tp">shared_ptr</span>&lt;<span class="tp">B</span>&gt; ptrB;  <span class="cm">// 강한 참조</span>
+    ~<span class="fn">A</span>() { <span class="fn">cout</span> &lt;&lt; <span class="str">"A 소멸"</span> &lt;&lt; <span class="fn">endl</span>; }
+};
+
+<span class="kw">class</span> <span class="tp">B</span>
+{
+<span class="kw">public</span>:
+    <span class="tp">weak_ptr</span>&lt;<span class="tp">A</span>&gt; ptrA;  <span class="cm">// ★ 약한 참조! 순환 깨뜨림</span>
+    ~<span class="fn">B</span>() { <span class="fn">cout</span> &lt;&lt; <span class="str">"B 소멸"</span> &lt;&lt; <span class="fn">endl</span>; }
+};
+
+<span class="kw">void</span> <span class="fn">Test</span>()
+{
+    <span class="kw">auto</span> a = <span class="fn">make_shared</span>&lt;<span class="tp">A</span>&gt;();
+    <span class="kw">auto</span> b = <span class="fn">make_shared</span>&lt;<span class="tp">B</span>&gt;();
+
+    a-&gt;ptrB = b;    <span class="cm">// A → B (shared_ptr, ref_count 증가)</span>
+    b-&gt;ptrA = a;    <span class="cm">// B → A (weak_ptr, ref_count 안 증가!)</span>
+}
+<span class="cm">// 함수 끝: a 소멸 → A ref 0 → A 삭제 → B ref 0 → B 삭제</span>
+<span class="cm">// 출력: "A 소멸" → "B 소멸" ✅</span></pre>
+    </div>
+
+    <!-- ============================== -->
+    <!-- enable_shared_from_this -->
+    <!-- ============================== -->
+    <h2 id="enable-shared">enable_shared_from_this</h2>
+
+    <p>
+      멤버 함수 안에서 자기 자신(<code>this</code>)의 <code>shared_ptr</code>을 만들고 싶을 때가 있다.
+      예를 들어 이벤트 시스템에 자기 자신을 등록하거나, 다른 객체에게 자기를 넘겨줄 때.
+    </p>
+
+    <h3>잘못된 방법 (CRASH!)</h3>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> 절대 하면 안 되는 것!</div>
+<pre><span class="kw">class</span> <span class="tp">Object</span>
+{
+<span class="kw">public</span>:
+    <span class="tp">shared_ptr</span>&lt;<span class="tp">Object</span>&gt; <span class="fn">GetSelf</span>()
+    {
+        <span class="cm">// ❌ 절대 이러면 안 됨!</span>
+        <span class="kw">return</span> <span class="tp">shared_ptr</span>&lt;<span class="tp">Object</span>&gt;(<span class="kw">this</span>);
+    }
+};</pre>
+    </div>
+
+    <!-- enable_shared_from_this 시각화: WRONG -->
+    <div class="mem-scene fade-in">
+      <div class="mem-scene-title">잘못된 방법 — shared_ptr(this) → DOUBLE DELETE!</div>
+
+      <p style="font-size:13px;color:var(--text-secondary);margin-bottom:12px;">
+        <strong style="color:var(--accent-red);">문제:</strong> 서로 다른 컨트롤 블록(ref_count)이 두 개 생김!
+      </p>
+      <div class="mem-row" style="align-items:center;">
+        <div class="mem-ptr-box">
+          <span class="ptr-name">original</span>
+          <span class="ptr-arrow">--&gt;</span>
+        </div>
+        <div class="mem-arrow">--&gt;</div>
+        <div class="mem-cell dead mem-cell-wide" style="min-width:180px;flex-direction:column;height:auto;padding:10px;">
+          <span>Object</span>
+          <span style="font-size:9px;color:var(--accent-red);">컨트롤 블록 A: ref:1</span>
+        </div>
+        <div class="mem-arrow">&lt;--</div>
+        <div class="mem-ptr-box" style="border-color:var(--accent-red);">
+          <span class="ptr-name" style="color:var(--accent-red);">shared_ptr(this)</span>
+          <span class="ptr-arrow">&lt;--</span>
+        </div>
+      </div>
+      <div style="margin-top:4px;margin-bottom:4px;text-align:center;">
+        <span style="font-family:var(--font-code);font-size:10px;color:var(--accent-red);">↑ 별도의 컨트롤 블록 B: ref:1 (위의 것과 다름!)</span>
+      </div>
+      <p style="font-size:12px;color:var(--accent-red);margin-top:8px;">
+        original과 shared_ptr(this)가 각각 ref_count를 독립적으로 관리 → 둘 다 delete 시도 → CRASH!
+      </p>
+    </div>
+
+    <h3>올바른 방법: enable_shared_from_this 상속</h3>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> enable_shared_from_this 올바른 사용</div>
+<pre><span class="kw">class</span> <span class="tp">Object</span> : <span class="kw">public</span> <span class="tp">std::enable_shared_from_this</span>&lt;<span class="tp">Object</span>&gt;
+{
+<span class="kw">public</span>:
+    <span class="cm">// ✅ 기존 컨트롤 블록을 공유! ref_count가 올라감</span>
+    <span class="cm">// shared_from_this()로 안전하게 자기 자신의 shared_ptr을 얻음</span>
+};</pre>
+    </div>
+
+    <!-- enable_shared_from_this 시각화: RIGHT -->
+    <div class="mem-scene fade-in">
+      <div class="mem-scene-title">올바른 방법 — shared_from_this() → 같은 컨트롤 블록!</div>
+
+      <p style="font-size:13px;color:var(--text-secondary);margin-bottom:12px;">
+        <strong style="color:var(--accent-green);">핵심:</strong> 같은 컨트롤 블록을 공유해서 ref_count만 올라감
+      </p>
+      <div class="mem-row" style="align-items:center;">
+        <div class="mem-ptr-box">
+          <span class="ptr-name">original</span>
+          <span class="ptr-arrow">--&gt;</span>
+        </div>
+        <div class="mem-arrow">--&gt;</div>
+        <div class="mem-cell used mem-cell-wide" style="min-width:180px;flex-direction:column;height:auto;padding:10px;">
+          <span>Object</span>
+          <span style="font-size:9px;color:var(--accent-green);">컨트롤 블록 (하나!): ref:2</span>
+          <span class="mem-ref active" style="margin-top:4px;">ref:2</span>
+        </div>
+        <div class="mem-arrow">&lt;--</div>
+        <div class="mem-ptr-box" style="border-color:var(--accent-green);">
+          <span class="ptr-name" style="color:var(--accent-green);">shared_from_this()</span>
+          <span class="ptr-arrow">&lt;--</span>
+        </div>
+      </div>
+      <p style="font-size:12px;color:var(--accent-green);margin-top:8px;">
+        두 shared_ptr이 동일한 컨트롤 블록을 공유 → ref_count 정확 → 안전한 소멸!
+      </p>
+    </div>
+
+    <h3>프로젝트에서 사용하는 This&lt;T&gt;() 패턴</h3>
+
+    <p>
+      <code>shared_from_this()</code>는 리턴 타입이 <code>shared_ptr&lt;Base&gt;</code>다.
+      파생 클래스에서 <code>shared_ptr&lt;Derived&gt;</code>가 필요할 때는 다운캐스트가 필요하다.
+      이걸 매번 쓰기 번거로우니 템플릿 헬퍼를 만들어둔다.
+    </p>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> This&lt;T&gt;() 템플릿 헬퍼 — 실제 코드 <span class="filename">Object.h (기본 버전)</span></div>
+<pre><span class="kw">class</span> <span class="tp">Object</span> : <span class="kw">public</span> <span class="tp">std::enable_shared_from_this</span>&lt;<span class="tp">Object</span>&gt;
+{
+<span class="kw">public</span>:
+    <span class="kw">template</span>&lt;<span class="kw">typename</span> <span class="tp">T</span>&gt;
+    <span class="tp">std::shared_ptr</span>&lt;<span class="tp">T</span>&gt; <span class="fn">This</span>()
+    {
+        <span class="cm">// shared_ptr의 this</span>
+        <span class="kw">return</span> <span class="tp">std</span>::<span class="fn">dynamic_pointer_cast</span>&lt;<span class="tp">T</span>&gt;(<span class="fn">shared_from_this</span>());
+    }
+
+    <span class="kw">virtual</span> <span class="tp">void</span> <span class="fn">Init</span>() = <span class="num">0</span>;
+    <span class="kw">virtual</span> <span class="tp">void</span> <span class="fn">Destroy</span>() = <span class="num">0</span>;
+};
+
+<span class="cm">// 사용 예: TestObject 안에서</span>
+<span class="kw">auto</span> self = <span class="fn">This</span>&lt;<span class="tp">TestObject</span>&gt;();  <span class="cm">// shared_ptr&lt;TestObject&gt;를 안전하게 얻음</span></pre>
+    </div>
+
+    <div class="warn-box">
+      <div class="warn-label">주의 — shared_from_this() 사용 조건</div>
+      <code>shared_from_this()</code>는 <strong>이미 shared_ptr로 관리되고 있는 객체</strong>에서만 호출 가능하다.<br>
+      스택에 만든 객체나 <code>new</code>로 만들고 shared_ptr에 넣지 않은 객체에서 호출하면 <strong>예외 발생</strong>!<br><br>
+      <div class="code-block" style="margin-top:8px;margin-bottom:0;">
+        <div class="code-header"><span class="lang">C++</span> 이렇게 하면 크래시</div>
+<pre><span class="tp">Object</span>* obj = <span class="kw">new</span> <span class="tp">TestObject</span>();     <span class="cm">// ❌ shared_ptr로 관리 안 됨</span>
+obj-&gt;<span class="fn">shared_from_this</span>();              <span class="cm">// 💥 bad_weak_ptr 예외!</span>
+
+<span class="cm">// 반드시 shared_ptr로 생성된 객체에서만:</span>
+<span class="kw">auto</span> obj2 = <span class="tp">std</span>::<span class="fn">make_shared</span>&lt;<span class="tp">TestObject</span>&gt;();
+obj2-&gt;<span class="fn">This</span>&lt;<span class="tp">TestObject</span>&gt;();             <span class="cm">// ✅ OK</span></pre>
+      </div>
+    </div>
+
+    <!-- ============================== -->
+    <!-- using 타입 앨리어스 -->
+    <!-- ============================== -->
+    <h2 id="using-alias">using 타입 앨리어스</h2>
+
+    <p>
+      <code>shared_ptr&lt;SomeVeryLongClassName&gt;</code>을 매번 쓰는 건 손가락이 아프다.
+      프로젝트에서는 <code>using</code>으로 타입 별칭을 만들어 간결하게 쓴다.
+    </p>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> 실제 코드 — 조건부 타입 앨리어스 <span class="filename">Info.h</span></div>
+<pre><span class="pp">#ifdef</span> <span class="mc">_USE_MEMORY_POOL</span>
+<span class="kw">using</span> <span class="tp">TestObjectPtr</span> = <span class="kw">class</span> <span class="tp">TestObject</span>*;                     <span class="cm">// 생 포인터</span>
+<span class="kw">using</span> <span class="tp">WeakTestObject</span> = <span class="kw">class</span> <span class="tp">TestObject</span>*;                    <span class="cm">// 생 포인터</span>
+<span class="pp">#elif</span> <span class="mc">_USE_OBJECT_POOL</span>
+<span class="kw">using</span> <span class="tp">TestObjectPtr</span> = <span class="kw">class</span> <span class="tp">TestObject</span>*;                     <span class="cm">// 생 포인터</span>
+<span class="kw">using</span> <span class="tp">WeakTestObject</span> = <span class="kw">class</span> <span class="tp">TestObject</span>*;                    <span class="cm">// 생 포인터</span>
+<span class="pp">#else</span>
+<span class="kw">using</span> <span class="tp">TestObjectPtr</span> = <span class="tp">std::shared_ptr</span>&lt;<span class="kw">class</span> <span class="tp">TestObject</span>&gt;;   <span class="cm">// 스마트 포인터</span>
+<span class="kw">using</span> <span class="tp">WeakTestObject</span> = <span class="tp">std::weak_ptr</span>&lt;<span class="kw">class</span> <span class="tp">TestObject</span>&gt;;  <span class="cm">// 약한 참조</span>
+<span class="pp">#endif</span></pre>
+    </div>
+
+    <p>
+      <code>class TestObject</code>는 <strong>전방 선언</strong>이야 — "이런 클래스가 어딘가에 있을 거야"라고 알려주는 것.
+      포인터나 shared_ptr만 쓸 때는 전방 선언으로 충분해. 헤더 순환 의존을 방지할 수 있어.
+    </p>
+
+    <div class="info-box">
+      <div class="info-label">전방 선언(Forward Declaration)이란?</div>
+      <code>class Texture;</code>만 적고 <code>#include "Texture.h"</code>는 안 하는 것.<br>
+      <strong>포인터(shared_ptr 포함)</strong>만 사용할 때는 전방 선언으로 충분하다.
+      클래스의 멤버에 접근하지 않고, 크기도 알 필요 없으니까.<br><br>
+      <strong>장점:</strong> 헤더 간 의존성이 줄어들어 <strong>컴파일 시간이 빨라진다</strong>.
+      대규모 프로젝트에서 이건 정말 중요하다.
+    </div>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> using 활용 예시</div>
+<pre><span class="cm">// Before (길고 반복적)</span>
+<span class="tp">shared_ptr</span>&lt;<span class="tp">Texture</span>&gt; <span class="fn">LoadTexture</span>(<span class="kw">const</span> <span class="tp">wstring</span>&amp; path);
+<span class="tp">shared_ptr</span>&lt;<span class="tp">Material</span>&gt; <span class="fn">CreateMaterial</span>(<span class="tp">shared_ptr</span>&lt;<span class="tp">Texture</span>&gt; tex);
+
+<span class="cm">// After (깔끔!)</span>
+<span class="tp">TextureRef</span> <span class="fn">LoadTexture</span>(<span class="kw">const</span> <span class="tp">wstring</span>&amp; path);
+<span class="tp">MaterialRef</span> <span class="fn">CreateMaterial</span>(<span class="tp">TextureRef</span> tex);</pre>
+    </div>
+
+    <!-- ============================== -->
+    <!-- 3가지 전략 포인터 비교 -->
+    <!-- ============================== -->
+    <h2 id="compare">3가지 스마트 포인터 비교</h2>
+
+    <p>
+      C++11 표준에는 세 가지 스마트 포인터가 있다. 각각의 용도와 특성을 비교해보자.
+    </p>
+
+    <div class="mem-compare fade-in">
+      <div class="mem-compare-col">
+        <div class="col-title">unique_ptr</div>
+        <p style="font-size:12px;color:var(--text-secondary);line-height:1.8;">
+          <strong style="color:var(--accent-green);">독점 소유</strong><br>
+          오직 하나만 객체를 소유<br>
+          복사 불가, 이동만 가능<br>
+          오버헤드 없음 (생 포인터와 동일)<br>
+          <code style="font-size:11px;">unique_ptr&lt;T&gt;</code>
+        </p>
+      </div>
+      <div class="mem-compare-col">
+        <div class="col-title">shared_ptr</div>
+        <p style="font-size:12px;color:var(--text-secondary);line-height:1.8;">
+          <strong style="color:var(--accent);">공유 소유</strong><br>
+          여러 포인터가 하나의 객체를 공유<br>
+          참조 카운트로 수명 관리<br>
+          약간의 오버헤드 (컨트롤 블록)<br>
+          <code style="font-size:11px;">shared_ptr&lt;T&gt;</code>
+        </p>
+      </div>
+      <div class="mem-compare-col">
+        <div class="col-title">weak_ptr</div>
+        <p style="font-size:12px;color:var(--text-secondary);line-height:1.8;">
+          <strong style="color:var(--accent-purple);">관찰만</strong><br>
+          소유하지 않고 관찰만<br>
+          ref_count에 포함 안 됨<br>
+          순환 참조 해결용<br>
+          <code style="font-size:11px;">weak_ptr&lt;T&gt;</code>
+        </p>
+      </div>
+    </div>
+
+    <div class="type-table-wrap fade-in">
+      <table class="type-table">
+        <thead>
+          <tr>
+            <th>항목</th>
+            <th>unique_ptr</th>
+            <th>shared_ptr</th>
+            <th>weak_ptr</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="t-name">소유권</td>
+            <td class="t-desc">독점 (1개만)</td>
+            <td class="t-desc">공유 (N개)</td>
+            <td class="t-desc">없음 (관찰만)</td>
+          </tr>
+          <tr>
+            <td class="t-name">복사 가능</td>
+            <td class="t-desc" style="color:var(--accent-red);">X (이동만)</td>
+            <td class="t-desc" style="color:var(--accent-green);">O</td>
+            <td class="t-desc" style="color:var(--accent-green);">O</td>
+          </tr>
+          <tr>
+            <td class="t-name">ref_count 영향</td>
+            <td class="t-desc">—</td>
+            <td class="t-desc">+1</td>
+            <td class="t-desc">변화 없음</td>
+          </tr>
+          <tr>
+            <td class="t-name">자동 해제</td>
+            <td class="t-desc">스코프 끝</td>
+            <td class="t-desc">ref_count 0일 때</td>
+            <td class="t-desc">해제 안 함</td>
+          </tr>
+          <tr>
+            <td class="t-name">메모리 오버헤드</td>
+            <td class="t-desc">0 (포인터 크기)</td>
+            <td class="t-desc">컨트롤 블록 (16~40B)</td>
+            <td class="t-desc">shared_ptr과 공유</td>
+          </tr>
+          <tr>
+            <td class="t-name">주 사용처</td>
+            <td class="t-desc">팩토리, 단독 소유 리소스</td>
+            <td class="t-desc">공유 리소스, 게임 오브젝트</td>
+            <td class="t-desc">순환 참조 방지, 캐시</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="info-box">
+      <div class="info-label">DX11 프로젝트에서의 선택 기준</div>
+      <strong>shared_ptr</strong>을 기본으로 사용하되, 소유권이 명확히 1곳인 경우는 <strong>unique_ptr</strong>이 더 가볍다.<br>
+      부모-자식 관계에서 <strong>자식 → 부모</strong> 방향은 반드시 <strong>weak_ptr</strong>을 쓰자.<br>
+      리소스 매니저(텍스처, 메시 캐시 등)에서도 <strong>weak_ptr</strong>로 캐시하면,
+      더 이상 쓰이지 않는 리소스가 자동으로 해제된다.
+    </div>
+
+    <!-- ============================== -->
+    <!-- Interactive ref_count demo -->
+    <!-- ============================== -->
+    <h3>Interactive: ref_count 데모</h3>
+
+    <div class="mem-scene fade-in">
+      <div class="mem-scene-title">shared_ptr ref_count 시뮬레이션</div>
+
+      <div class="mem-sim-controls">
+        <button class="mem-sim-btn" id="btnCreate" style="border-color:#3fb95044;">Create shared_ptr</button>
+        <button class="mem-sim-btn" id="btnCopy" style="border-color:#58a6ff44;">Copy</button>
+        <button class="mem-sim-btn" id="btnReset" style="border-color:#d2992244;">Reset (하나 제거)</button>
+        <button class="mem-sim-btn" id="btnClear" style="border-color:#f8514944;">전체 초기화</button>
+      </div>
+
+      <div id="refCountDisplay" style="margin-top:16px;">
+        <div class="mem-row" style="align-items:center;gap:8px;" id="ptrRow">
+          <!-- JS가 동적으로 ptr 박스를 추가 -->
+        </div>
+        <div class="mem-row" style="align-items:center;justify-content:center;margin-top:12px;" id="objectRow">
+          <div class="mem-cell free mem-cell-wide" style="min-width:180px;flex-direction:column;height:auto;padding:12px;" id="objCell">
+            <span id="objLabel" style="font-size:11px;">아직 생성 안 됨</span>
+            <span class="mem-ref" id="refBadge" style="margin-top:4px;background:var(--border);color:var(--text-muted);">ref:0</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="mem-sim-status" id="simStatus">
+        버튼을 눌러서 shared_ptr의 ref_count 변화를 관찰해보세요.
+      </div>
+    </div>
+
+    <!-- Interactive ref_count demo script -->
+    <script>
+    (function() {
+      let refCount = 0;
+      let ptrCount = 0;
+      let created = false;
+      const ptrRow = document.getElementById('ptrRow');
+      const objCell = document.getElementById('objCell');
+      const objLabel = document.getElementById('objLabel');
+      const refBadge = document.getElementById('refBadge');
+      const simStatus = document.getElementById('simStatus');
+
+      function updateDisplay() {
+        if (!created) {
+          objCell.className = 'mem-cell free mem-cell-wide';
+          objCell.style.minWidth = '180px';
+          objCell.style.flexDirection = 'column';
+          objCell.style.height = 'auto';
+          objCell.style.padding = '12px';
+          objLabel.textContent = '아직 생성 안 됨';
+          refBadge.className = 'mem-ref';
+          refBadge.style.background = 'var(--border)';
+          refBadge.style.color = 'var(--text-muted)';
+          refBadge.textContent = 'ref:0';
+        } else if (refCount > 0) {
+          objCell.className = 'mem-cell used mem-cell-wide';
+          objCell.style.minWidth = '180px';
+          objCell.style.flexDirection = 'column';
+          objCell.style.height = 'auto';
+          objCell.style.padding = '12px';
+          objLabel.textContent = 'TestObject';
+          refBadge.className = 'mem-ref active';
+          refBadge.style.background = '';
+          refBadge.style.color = '';
+          refBadge.textContent = 'ref:' + refCount;
+        } else {
+          objCell.className = 'mem-cell dead mem-cell-wide';
+          objCell.style.minWidth = '180px';
+          objCell.style.flexDirection = 'column';
+          objCell.style.height = 'auto';
+          objCell.style.padding = '12px';
+          objLabel.textContent = 'DELETED';
+          refBadge.className = 'mem-ref zero';
+          refBadge.style.background = '';
+          refBadge.style.color = '';
+          refBadge.textContent = 'ref:0';
+        }
+
+        ptrRow.innerHTML = '';
+        for (let i = 0; i < ptrCount; i++) {
+          const box = document.createElement('div');
+          box.className = 'mem-ptr-box';
+          box.style.margin = '2px';
+          box.innerHTML = '<span class="ptr-name">sp' + (i + 1) + '</span><span class="ptr-arrow">--&gt;</span>';
+          ptrRow.appendChild(box);
+        }
+      }
+
+      document.getElementById('btnCreate').addEventListener('click', function() {
+        if (created && refCount > 0) {
+          simStatus.textContent = '이미 객체가 존재합니다. Reset으로 해제하거나 전체 초기화 후 다시 만드세요.';
+          return;
+        }
+        created = true;
+        refCount = 1;
+        ptrCount = 1;
+        simStatus.textContent = 'make_shared<TestObject>() → 객체 생성, ref_count = 1';
+        updateDisplay();
+      });
+
+      document.getElementById('btnCopy').addEventListener('click', function() {
+        if (!created || refCount <= 0) {
+          simStatus.textContent = '먼저 Create로 객체를 만들어주세요.';
+          return;
+        }
+        refCount++;
+        ptrCount++;
+        simStatus.textContent = 'shared_ptr 복사 → ref_count = ' + refCount;
+        updateDisplay();
+      });
+
+      document.getElementById('btnReset').addEventListener('click', function() {
+        if (!created || refCount <= 0) {
+          simStatus.textContent = '해제할 shared_ptr이 없습니다.';
+          return;
+        }
+        refCount--;
+        ptrCount--;
+        if (refCount === 0) {
+          simStatus.textContent = 'ref_count = 0 → 소멸자 호출, 메모리 자동 해제!';
+        } else {
+          simStatus.textContent = 'shared_ptr 하나 해제 → ref_count = ' + refCount + ' (아직 살아있음)';
+        }
+        updateDisplay();
+      });
+
+      document.getElementById('btnClear').addEventListener('click', function() {
+        created = false;
+        refCount = 0;
+        ptrCount = 0;
+        simStatus.textContent = '초기화 완료. Create 버튼으로 새 객체를 만들어보세요.';
+        updateDisplay();
+      });
+
+      updateDisplay();
+    })();
+    </script>
+
+    <!-- Prev / Next -->
+    <div class="page-nav" id="page-nav"></div>
+  <script>
+  var PAGE_ID = "0002_03";
+  var ON_THIS_PAGE = [
+    { id: "why", label: "왜 스마트 포인터?" },
+    { id: "shared-ptr", label: "shared_ptr" },
+    { id: "weak-ptr", label: "weak_ptr" },
+    { id: "enable-shared", label: "enable_shared_from_this" },
+    { id: "using-alias", label: "using 타입 앨리어스" },
+    { id: "compare", label: "3가지 전략 포인터 비교" },
+  ];
+  </script>
+  <script src="nav.js"></script>
+  </main>
+
+</body>
+</html>

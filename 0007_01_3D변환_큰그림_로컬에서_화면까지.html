@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Day07 — 3D 변환의 큰 그림 | DX11 노트</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <header class="header">
+    <button class="hamburger" id="hamburger" aria-label="메뉴 열기">
+      <span></span><span></span><span></span>
+    </button>
+    <div class="header-logo">
+      <a href="index.html" style="color:inherit;text-decoration:none">DX11 NOTE</a>
+      <span class="subtitle">Day 07</span>
+    </div>
+    <button class="theme-toggle" id="themeToggle" aria-label="테마 전환">
+      <span class="theme-toggle-icon"></span>
+    </button>
+  </header>
+
+  <div class="sidebar-overlay" id="sidebarOverlay"></div>
+  <nav class="sidebar" id="sidebar"></nav>
+
+  <main class="main-content content">
+    <div class="page-title fade-in">
+      <span class="tag tag-day">DAY 07</span>
+      <h1>3D 변환의 큰 그림<br>로컬에서 화면까지</h1>
+      <p class="page-desc">삼각형이 NDC에 고정되어 있던 시대는 끝났다. 이제 이동, 회전, 크기 조절이 가능하고, 카메라 시점으로 투영된다.</p>
+    </div>
+
+    <!-- 공간 변환 파이프라인 -->
+    <h2 id="spaces">공간 변환 파이프라인</h2>
+
+    <div class="mem-scene fade-in">
+      <div class="mem-scene-title">로컬 → 월드 → 뷰 → 투영 → 화면</div>
+      <div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;justify-content:center">
+        <div class="mem-cell" style="min-width:60px;height:auto;padding:8px;border-color:var(--text-muted);font-size:10px;text-align:center"><strong>로컬</strong><br><span style="font-size:8px;color:var(--text-muted)">모델 원점</span></div>
+        <div class="mem-arrow" style="font-size:12px">×W→</div>
+        <div class="mem-cell used" style="min-width:60px;height:auto;padding:8px;font-size:10px;text-align:center"><strong>월드</strong><br><span style="font-size:8px;color:var(--text-muted)">게임 세상</span></div>
+        <div class="mem-arrow" style="font-size:12px">×V→</div>
+        <div class="mem-cell" style="min-width:60px;height:auto;padding:8px;border-color:var(--accent);font-size:10px;text-align:center"><strong>뷰</strong><br><span style="font-size:8px;color:var(--text-muted)">카메라 기준</span></div>
+        <div class="mem-arrow" style="font-size:12px">×P→</div>
+        <div class="mem-cell rent" style="min-width:60px;height:auto;padding:8px;font-size:10px;text-align:center"><strong>투영</strong><br><span style="font-size:8px;color:var(--text-muted)">3D→2D</span></div>
+        <div class="mem-arrow" style="font-size:12px">→</div>
+        <div class="mem-cell returned" style="min-width:60px;height:auto;padding:8px;font-size:10px;text-align:center"><strong>화면</strong><br><span style="font-size:8px;color:var(--text-muted)">픽셀</span></div>
+      </div>
+    </div>
+
+    <div class="type-table-wrap fade-in">
+      <table class="type-table">
+        <thead><tr><th>공간</th><th>의미</th><th>행렬</th></tr></thead>
+        <tbody>
+          <tr><td class="t-name">로컬</td><td class="t-desc">모델 만들 때의 원점 기준</td><td class="t-desc">—</td></tr>
+          <tr><td class="t-name">월드</td><td class="t-desc">게임 세상에서의 위치/크기/회전</td><td class="t-real">S × R × T</td></tr>
+          <tr><td class="t-name">뷰</td><td class="t-desc">카메라 기준으로 재정의</td><td class="t-real">뷰행렬</td></tr>
+          <tr><td class="t-name">투영</td><td class="t-desc">3D → 2D (원근법)</td><td class="t-real">PerspectiveFovLH</td></tr>
+          <tr><td class="t-name">화면</td><td class="t-desc">최종 픽셀 좌표</td><td class="t-real">뷰포트</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- VS 변화 -->
+    <h3>VS가 바뀌었다</h3>
+    <div class="compare-grid">
+      <div class="compare-item bad">
+        <div class="compare-label">Day06 — 패스스루</div>
+        <div style="font-family:var(--font-code);font-size:11px;color:var(--text-secondary)">
+          output.Pos = float4(input.Pos, 1.f);
+        </div>
+      </div>
+      <div class="compare-item good">
+        <div class="compare-label">Day07 — 실제 변환!</div>
+        <div style="font-family:var(--font-code);font-size:11px;color:var(--text-secondary)">
+          output.Pos = <strong style="color:var(--accent-green)">mul</strong>(float4(input.Pos, 1.f), <strong style="color:var(--accent-green)">gWVP</strong>);
+        </div>
+      </div>
+    </div>
+
+    <!-- Render 흐름 -->
+    <h2 id="render">Render() — 변환이 추가된 흐름</h2>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> 핵심 부분 <span class="filename">Core/GameEngine.cpp</span></div>
+<pre><span class="tp">FMatrix</span> mW, mP;
+<span class="tp">FMatrix</span> mS, mR, mT;
+
+mS.<span class="fn">Scaling</span>(scale);
+mR.<span class="fn">Rotation</span>(rot);
+mT.<span class="fn">Translation</span>(pos);
+
+mW = mS * mR * mT;
+
+<span class="cm">//투영생성</span>
+mP = <span class="tp">DirectX</span>::<span class="fn">XMMatrixPerspectiveFovLH</span>(<span class="tp">DirectX</span>::<span class="fn">XMConvertToRadians</span>(<span class="num">90.f</span>), <span class="num">1280.f</span> / <span class="num">720.f</span>, <span class="num">0.5</span>, <span class="num">1000.f</span>);
+
+buffer-&gt;<span class="fn">SetWorldMatrix</span>(mW);
+buffer-&gt;<span class="fn">SetProjMatrix</span>(mP);
+
+buffer-&gt;<span class="fn">Update</span>();
+
+shader-&gt;<span class="fn">SetShader</span>();
+mesh-&gt;<span class="fn">Render</span>();</pre>
+    </div>
+
+    <div class="mem-steps fade-in">
+      <div class="mem-step"><div class="mem-step-num">1</div><div class="mem-step-text"><strong>입력 처리</strong> — WASD(이동), QE(회전), 12(크기) × deltaTime</div></div>
+      <div class="mem-step"><div class="mem-step-num">2</div><div class="mem-step-text"><strong>행렬 생성</strong> — Scaling, Rotation, Translation → <code>mW = mS * mR * mT</code></div></div>
+      <div class="mem-step"><div class="mem-step-num">3</div><div class="mem-step-text"><strong>투영 행렬</strong> — PerspectiveFovLH(90°, 16:9, near=0.5, far=1000)</div></div>
+      <div class="mem-step"><div class="mem-step-num">4</div><div class="mem-step-text"><strong>상수 버퍼</strong> — SetWorld/SetProj → Update (WV, WVP 계산 + Transpose + GPU 전송)</div></div>
+      <div class="mem-step"><div class="mem-step-num">5</div><div class="mem-step-text"><strong>그리기</strong> — SetShader → Render → Present</div></div>
+    </div>
+
+    <!-- S×R×T -->
+    <h2 id="srt">월드 행렬 = S × R × T</h2>
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span></div>
+<pre>mW = mS * mR * mT;  <span class="cm">// 크기 → 회전 → 이동</span></pre>
+    </div>
+
+    <div class="compare-grid">
+      <div class="compare-item good">
+        <div class="compare-label">S × R × T (정상)</div>
+        <p style="font-size:12px;color:var(--text-secondary)">크기 조절 → 제자리 회전 → 이동</p>
+      </div>
+      <div class="compare-item bad">
+        <div class="compare-label">T × R × S (비정상)</div>
+        <p style="font-size:12px;color:var(--text-secondary)">이동 → 원점 기준 공전 → 크기 (의도 아님!)</p>
+      </div>
+    </div>
+    <p>행렬 곱은 <strong>교환법칙이 안 됨</strong>. 순서를 바꾸면 완전히 다른 결과.</p>
+
+    <!-- S×R×T 인터랙티브 비교기 -->
+    <h3>자전 vs 공전 — 직접 확인</h3>
+    <p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">슬라이더로 회전각을 조절해봐. 왼쪽은 자전(S×R×T), 오른쪽은 공전(T×R×S).</p>
+
+    <div style="margin-bottom:8px">
+      <label style="font-family:var(--font-code);font-size:11px;color:var(--text-secondary)">회전각: <span id="srtAngleLabel">0</span>°</label>
+      <input type="range" id="srtSlider" min="0" max="360" value="0" style="width:100%;accent-color:var(--accent)">
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div>
+        <div style="font-family:var(--font-heading);font-size:11px;font-weight:700;color:var(--accent-green);margin-bottom:6px;text-align:center">S × R × T (자전)</div>
+        <canvas id="srtCorrect" width="200" height="200" style="width:100%;border-radius:8px;background:#000;border:1px solid var(--accent-green)33"></canvas>
+      </div>
+      <div>
+        <div style="font-family:var(--font-heading);font-size:11px;font-weight:700;color:var(--accent-red);margin-bottom:6px;text-align:center">T × R × S (공전)</div>
+        <canvas id="srtWrong" width="200" height="200" style="width:100%;border-radius:8px;background:#000;border:1px solid var(--accent-red)33"></canvas>
+      </div>
+    </div>
+
+    <!-- 원근 투영 -->
+    <h2 id="projection">원근 투영 — PerspectiveFovLH</h2>
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span></div>
+<pre>mP = <span class="tp">DirectX</span>::<span class="fn">XMMatrixPerspectiveFovLH</span>(
+    <span class="tp">DirectX</span>::<span class="fn">XMConvertToRadians</span>(<span class="num">90.f</span>),  <span class="cm">// FOV 90도</span>
+    <span class="num">1280.f</span> / <span class="num">720.f</span>,                      <span class="cm">// 종횡비 16:9</span>
+    <span class="num">0.5</span>,                                 <span class="cm">// near plane</span>
+    <span class="num">1000.f</span>                               <span class="cm">// far plane</span>
+);</pre>
+    </div>
+
+    <div class="info-box">
+      <div class="info-label">인자 설명</div>
+      <strong>LH</strong> = Left-Handed (z가 화면 안쪽 증가)<br>
+      <strong>FOV 90°</strong> = 넓은 시야. 60°면 줌인 효과<br>
+      <strong>near/far</strong> = 이 범위 밖은 클리핑(잘림). <code>pos._z = 10.f</code>로 삼각형을 범위 안에 배치
+    </div>
+
+    <!-- 입력 -->
+    <h2 id="input">입력 처리 — GetAsyncKeyState</h2>
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span></div>
+<pre><span class="kw">if</span> (<span class="fn">GetAsyncKeyState</span>(<span class="str">'D'</span>) &amp; <span class="num">0x8000</span>)
+    pos._x += <span class="num">1.f</span> * deltaTime;</pre>
+    </div>
+    <p><code>GetAsyncKeyState</code> — 키가 현재 눌려있는지 확인. <code>* deltaTime</code> — 프레임 독립 (Day04). 나중에 InputManager로 분리 예정.</p>
+
+    <!-- Day06 대비 -->
+    <h2 id="diff">Day06 대비 변화</h2>
+    <div class="type-table-wrap fade-in">
+      <table class="type-table">
+        <thead><tr><th>Day06</th><th>Day07</th></tr></thead>
+        <tbody>
+          <tr><td class="t-desc">NDC 좌표 고정</td><td class="t-name" style="color:var(--accent-green)">월드/투영 변환</td></tr>
+          <tr><td class="t-desc">VS 패스스루</td><td class="t-name" style="color:var(--accent-green)">mul(Pos, gWVP)</td></tr>
+          <tr><td class="t-desc">입력 없음</td><td class="t-name" style="color:var(--accent-green)">WASD/QE/12</td></tr>
+          <tr><td class="t-desc">상수 버퍼 없음</td><td class="t-name" style="color:var(--accent-green)">CBuffer로 행렬 전달</td></tr>
+          <tr><td class="t-desc">FMatrix 빈 클래스</td><td class="t-name" style="color:var(--accent-green)">S/R/T/Transpose/Inverse 구현</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="page-nav" id="page-nav"></div>
+
+  <script>
+  var PAGE_ID = "0007_01";
+  var ON_THIS_PAGE = [
+    { id: "spaces", label: "공간 변환 파이프라인" },
+    { id: "render", label: "Render() 흐름" },
+    { id: "srt", label: "S × R × T" },
+    { id: "projection", label: "원근 투영" },
+    { id: "input", label: "입력 처리" },
+    { id: "diff", label: "Day06 대비" },
+  ];
+  </script>
+  <script src="nav.js"></script>
+
+  <!-- S×R×T 비교기 -->
+  <script>
+  (function(){
+    var slider = document.getElementById('srtSlider');
+    var label = document.getElementById('srtAngleLabel');
+    var c1 = document.getElementById('srtCorrect');
+    var c2 = document.getElementById('srtWrong');
+    if (!c1 || !c2) return;
+    var ctx1 = c1.getContext('2d');
+    var ctx2 = c2.getContext('2d');
+    var S = 200, cx = S/2, cy = S/2;
+
+    // Triangle (local space)
+    var tri = [{x:0,y:-20},{x:17,y:13},{x:-17,y:13}];
+    var scale = 2;
+    var tx = 40, ty = 0; // translation offset
+
+    function drawScene(ctx, angle, correct) {
+      ctx.clearRect(0, 0, S, S);
+      // Grid
+      ctx.strokeStyle = '#ffffff0a';
+      for (var i = 0; i <= S; i += 25) {
+        ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, S); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(S, i); ctx.stroke();
+      }
+      // Origin cross
+      ctx.strokeStyle = '#ffffff15';
+      ctx.beginPath(); ctx.moveTo(cx, 0); ctx.lineTo(cx, S); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, cy); ctx.lineTo(S, cy); ctx.stroke();
+      // Origin dot
+      ctx.fillStyle = '#ffffff33';
+      ctx.beginPath(); ctx.arc(cx, cy, 3, 0, Math.PI*2); ctx.fill();
+
+      var rad = angle * Math.PI / 180;
+      var cos = Math.cos(rad), sin = Math.sin(rad);
+
+      var pts = [];
+      for (var i = 0; i < 3; i++) {
+        var px = tri[i].x, py = tri[i].y;
+        var rx, ry;
+
+        if (correct) {
+          // S × R × T: scale → rotate → translate
+          // 1. Scale
+          px *= scale; py *= scale;
+          // 2. Rotate (around origin)
+          rx = px * cos - py * sin;
+          ry = px * sin + py * cos;
+          // 3. Translate
+          rx += tx; ry += ty;
+        } else {
+          // T × R × S: translate → rotate → scale
+          // 1. Translate
+          px += tx; py += ty;
+          // 2. Rotate (around origin — causes orbiting!)
+          rx = px * cos - py * sin;
+          ry = px * sin + py * cos;
+          // 3. Scale
+          rx *= scale; ry *= scale;
+        }
+
+        pts.push({x: cx + rx, y: cy + ry});
+      }
+
+      // Draw trail for wrong (orbit path)
+      if (!correct) {
+        ctx.strokeStyle = '#f8514933';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        var orbitR = Math.sqrt(tx*tx + ty*ty) * scale;
+        ctx.arc(cx, cy, orbitR, 0, Math.PI*2);
+        ctx.stroke();
+      }
+
+      // Fill triangle
+      ctx.fillStyle = correct ? '#3fb95033' : '#f8514933';
+      ctx.beginPath();
+      ctx.moveTo(pts[0].x, pts[0].y);
+      ctx.lineTo(pts[1].x, pts[1].y);
+      ctx.lineTo(pts[2].x, pts[2].y);
+      ctx.closePath();
+      ctx.fill();
+
+      // Wireframe
+      ctx.strokeStyle = correct ? '#3fb950' : '#f85149';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(pts[0].x, pts[0].y);
+      ctx.lineTo(pts[1].x, pts[1].y);
+      ctx.lineTo(pts[2].x, pts[2].y);
+      ctx.closePath();
+      ctx.stroke();
+
+      // Label
+      ctx.fillStyle = '#ffffff44';
+      ctx.font = '9px "Fira Code", monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(correct ? '자전' : '공전', cx, S - 8);
+    }
+
+    function update() {
+      var angle = parseInt(slider.value);
+      label.textContent = angle;
+      drawScene(ctx1, angle, true);
+      drawScene(ctx2, angle, false);
+    }
+
+    slider.addEventListener('input', update);
+    update();
+  })();
+  </script>
+  </main>
+</body>
+</html>

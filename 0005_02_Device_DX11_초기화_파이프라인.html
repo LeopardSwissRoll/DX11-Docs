@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Device 클래스 — DX11 초기화 | DX11 노트</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <header class="header">
+    <button class="hamburger" id="hamburger" aria-label="메뉴 열기">
+      <span></span><span></span><span></span>
+    </button>
+    <div class="header-logo">
+      <a href="index.html" style="color:inherit;text-decoration:none">DX11 NOTE</a>
+      <span class="subtitle">Deep Dive</span>
+    </div>
+    <button class="theme-toggle" id="themeToggle" aria-label="테마 전환">
+      <span class="theme-toggle-icon"></span>
+    </button>
+  </header>
+
+  <div class="sidebar-overlay" id="sidebarOverlay"></div>
+  <nav class="sidebar" id="sidebar"></nav>
+
+  <main class="main-content content">
+    <div class="page-title fade-in">
+      <span class="tag tag-detail">DEEP DIVE</span>
+      <h1>Device 클래스<br>DX11 초기화 해부</h1>
+      <p class="page-desc">GPU와 대화할 준비. D3D11CreateDevice, SwapChain, RenderTargetView, DepthStencil, Viewport — 초기화 코드 전체를 해부.</p>
+    </div>
+
+    <!-- 5개 객체 -->
+    <h2 id="objects">Device가 들고 있는 DX11 객체 5개</h2>
+
+    <div class="type-table-wrap fade-in">
+      <table class="type-table">
+        <thead><tr><th>객체</th><th>비유</th><th>역할</th></tr></thead>
+        <tbody>
+          <tr><td class="t-name">ID3D11Device</td><td class="t-desc">공장</td><td class="t-desc">GPU 리소스(텍스처, 버퍼, 셰이더)를 <strong>생성</strong></td></tr>
+          <tr><td class="t-name">ID3D11DeviceContext</td><td class="t-desc">작업자</td><td class="t-desc">GPU에 <strong>렌더링 명령</strong>. 파이프라인에 리소스 바인딩</td></tr>
+          <tr><td class="t-name">IDXGISwapChain</td><td class="t-desc">무대 스크린</td><td class="t-desc">더블 버퍼링 — 백/프론트 버퍼 <strong>교체</strong></td></tr>
+          <tr><td class="t-name">ID3D11RenderTargetView</td><td class="t-desc">캔버스</td><td class="t-desc">백버퍼를 <strong>렌더링 목적지</strong>로 지정</td></tr>
+          <tr><td class="t-name">ID3D11DepthStencilView</td><td class="t-desc">깊이 지도</td><td class="t-desc">각 픽셀의 <strong>깊이 + 스텐실</strong> 저장</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- HRESULT -->
+    <h2 id="hresult">HRESULT 패턴</h2>
+    <p>DX11 함수는 거의 다 <code>HRESULT</code>를 반환해. <code>FAILED()</code> 매크로로 체크하는 패턴이 Init 전체에 반복됨:</p>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> HRESULT 패턴</div>
+<pre><span class="kw">if</span> (<span class="fn">FAILED</span>(<span class="fn">D3D11CreateDevice</span>(...)))
+{
+    <span class="tp">LogManager</span>::<span class="fn">Instance</span>().<span class="fn">Fatal</span>(<span class="str">"Create Device Error..!"</span>);
+    <span class="kw">return</span> <span class="kw">false</span>;
+}</pre>
+    </div>
+    <p><code>HRESULT</code>는 <code>long</code> 타입. 0 이상 = 성공, 음수 = 실패. DX11 코드에서 수십 번 반복되는 패턴이니까 익숙해져야 해.</p>
+
+    <!-- Init 순서 -->
+    <h2 id="init">Init — 초기화 6단계</h2>
+
+    <div class="mem-scene fade-in">
+      <div class="mem-scene-title">Device::Init(hWnd, 1280, 720, true)</div>
+      <div class="mem-steps">
+        <div class="mem-step"><div class="mem-step-num">1</div><div class="mem-step-text"><code>D3D11CreateDevice()</code> — Device + Context 생성</div></div>
+        <div class="mem-step"><div class="mem-step-num">2</div><div class="mem-step-text"><code>CheckMultisampleQualityLevels()</code> — 멀티샘플링 지원 확인</div></div>
+        <div class="mem-step"><div class="mem-step-num">3</div><div class="mem-step-text">SwapChain 생성 — DXGI 체인으로 팩토리 → 스왑체인</div></div>
+        <div class="mem-step"><div class="mem-step-num">4</div><div class="mem-step-text"><code>GetBuffer() + CreateRenderTargetView()</code> — 백버퍼 → RTV</div></div>
+        <div class="mem-step"><div class="mem-step-num">5</div><div class="mem-step-text"><code>CreateTexture2D() + CreateDepthStencilView()</code> — 깊이/스텐실</div></div>
+        <div class="mem-step"><div class="mem-step-num">6</div><div class="mem-step-text"><code>RSSetViewports()</code> — 뷰포트 설정</div></div>
+      </div>
+    </div>
+
+    <!-- 3-1 CreateDevice -->
+    <h3>1. D3D11CreateDevice</h3>
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> Device + Context 생성 <span class="filename">Core/Device.cpp</span></div>
+<pre><span class="tp">uint32</span> flag = <span class="mc">D3D11_CREATE_DEVICE_BGRA_SUPPORT</span>;
+
+<span class="pp">#ifdef _DEBUG</span>
+    flag |= <span class="mc">D3D11_CREATE_DEVICE_DEBUG</span>;
+<span class="pp">#endif</span>
+
+<span class="tp">D3D_FEATURE_LEVEL</span> fLevel = <span class="mc">D3D_FEATURE_LEVEL_11_0</span>;
+<span class="tp">D3D_FEATURE_LEVEL</span> fLevelResult;
+
+<span class="kw">if</span> (<span class="fn">FAILED</span>(<span class="fn">D3D11CreateDevice</span>(
+    <span class="kw">nullptr</span>,                    <span class="cm">// 어댑터 (nullptr = 기본 GPU)</span>
+    <span class="mc">D3D_DRIVER_TYPE_HARDWARE</span>,   <span class="cm">// 하드웨어 가속</span>
+    <span class="num">0</span>,                          <span class="cm">// 소프트웨어 래스터라이저 (안 씀)</span>
+    flag,                       <span class="cm">// 플래그 (BGRA + DEBUG)</span>
+    &amp;fLevel,                    <span class="cm">// 요청 기능 레벨</span>
+    <span class="num">1</span>,                          <span class="cm">// 기능 레벨 배열 크기</span>
+    <span class="mc">D3D11_SDK_VERSION</span>,          <span class="cm">// SDK 버전</span>
+    _device.<span class="fn">GetAddressOf</span>(),     <span class="cm">// [out] Device</span>
+    &amp;fLevelResult,              <span class="cm">// [out] 실제 기능 레벨</span>
+    _context.<span class="fn">GetAddressOf</span>()     <span class="cm">// [out] Context</span>
+)))</pre>
+    </div>
+
+    <!-- 3-2 Multisample -->
+    <h3>2. 멀티샘플링 (Anti-Aliasing)</h3>
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> 4x MSAA 지원 확인 <span class="filename">Core/Device.cpp</span></div>
+<pre><span class="tp">uint32</span> sampleCount = <span class="num">4</span>;
+<span class="tp">uint32</span> check = <span class="num">0</span>;
+_device-&gt;<span class="fn">CheckMultisampleQualityLevels</span>(<span class="mc">DXGI_FORMAT_R8G8B8A8_UNORM</span>, <span class="num">4</span>, &amp;check);
+
+<span class="kw">if</span> (check &lt; <span class="num">1</span>)
+    sampleCount = <span class="num">1</span>;</pre>
+    </div>
+    <p>멀티샘플링 = 계단 현상(jagging) 줄이기. 4x MSAA 요청하되, GPU가 지원 안 하면 1x로 폴백.</p>
+
+    <!-- 3-3 SwapChain -->
+    <h3>3. SwapChain 생성</h3>
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> SwapChain 설정 <span class="filename">Core/Device.cpp</span></div>
+<pre><span class="tp">DXGI_SWAP_CHAIN_DESC</span> swapDesc = {};
+
+swapDesc.BufferDesc.Width = widht;                          <span class="cm">// 백버퍼 가로</span>
+swapDesc.BufferDesc.Height = height;                        <span class="cm">// 백버퍼 세로</span>
+swapDesc.BufferDesc.Format = <span class="mc">DXGI_FORMAT_R8G8B8A8_UNORM</span>;    <span class="cm">// RGBA 각 8비트</span>
+swapDesc.BufferDesc.RefreshRate.Numerator = <span class="num">1</span>;
+swapDesc.BufferDesc.RefreshRate.Denominator = <span class="num">60</span>;            <span class="cm">// 60Hz</span>
+swapDesc.BufferDesc.Scaling = <span class="mc">DXGI_MODE_SCALING_UNSPECIFIED</span>;
+swapDesc.BufferDesc.ScanlineOrdering = <span class="mc">DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED</span>;
+
+swapDesc.BufferCount = <span class="num">1</span>;                                    <span class="cm">// 백버퍼 1개</span>
+swapDesc.BufferUsage = <span class="mc">DXGI_USAGE_RENDER_TARGET_OUTPUT</span>;      <span class="cm">// 렌더 타겟으로 사용</span>
+swapDesc.OutputWindow = _hWnd;                               <span class="cm">// 출력할 윈도우</span>
+swapDesc.SampleDesc.Quality = <span class="num">0</span>;
+swapDesc.SampleDesc.Count = sampleCount;                     <span class="cm">// 멀티샘플링</span>
+swapDesc.Windowed = _windowMode;                             <span class="cm">// 창모드 / 전체화면</span>
+swapDesc.SwapEffect = <span class="mc">DXGI_SWAP_EFFECT_DISCARD</span>;              <span class="cm">// 이전 내용 무시</span></pre>
+    </div>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> Device → DXGI Factory → SwapChain <span class="filename">Core/Device.cpp</span></div>
+<pre><span class="cm">// Device → IDXGIDevice → IDXGIAdapter → IDXGIFactory</span>
+<span class="tp">ComPtr</span>&lt;<span class="tp">IDXGIDevice</span>&gt; dxgiDevice = <span class="kw">nullptr</span>;
+_device-&gt;<span class="fn">QueryInterface</span>(__uuidof(<span class="tp">IDXGIDevice</span>), (<span class="tp">void</span>**)dxgiDevice.<span class="fn">GetAddressOf</span>());
+
+<span class="tp">ComPtr</span>&lt;<span class="tp">IDXGIAdapter</span>&gt; adapter = <span class="kw">nullptr</span>;
+dxgiDevice-&gt;<span class="fn">GetParent</span>(__uuidof(<span class="tp">IDXGIAdapter</span>), (<span class="tp">void</span>**)adapter.<span class="fn">GetAddressOf</span>());
+
+<span class="tp">ComPtr</span>&lt;<span class="tp">IDXGIFactory</span>&gt; factory = <span class="kw">nullptr</span>;
+adapter-&gt;<span class="fn">GetParent</span>(__uuidof(<span class="tp">IDXGIFactory</span>), (<span class="tp">void</span>**)factory.<span class="fn">GetAddressOf</span>());
+
+<span class="kw">if</span> (<span class="fn">FAILED</span>(factory-&gt;<span class="fn">CreateSwapChain</span>(_device.<span class="fn">Get</span>(), &amp;swapDesc, _swapChain.<span class="fn">GetAddressOf</span>())))
+{
+    <span class="tp">LogManager</span>::<span class="fn">Instance</span>().<span class="fn">Fatal</span>(<span class="str">"CreateSwapChain Error..!"</span>);
+    <span class="kw">return</span> <span class="kw">false</span>;
+}</pre>
+    </div>
+
+    <div class="warn-box">
+      <div class="warn-label">왜 D3D11CreateDevice 하나로 안 만드나?</div>
+      <strong>DXGI</strong> = 하드웨어 추상화 (어댑터, 모니터, SwapChain — "화면 관련")<br>
+      <strong>DX11</strong> = 렌더링 (Device, Context — "그리기 관련")<br><br>
+      SwapChain은 "화면에 출력"하는 거라 DXGI 영역이고, D3D11CreateDevice는 "그리기 도구"만 만듦. 서로 <strong>다른 레이어</strong>라 분리되어 있어.
+    </div>
+
+    <!-- 3-4 RTV -->
+    <h3>4. RenderTargetView — 백버퍼를 캔버스로</h3>
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> 백버퍼 → RTV <span class="filename">Core/Device.cpp</span></div>
+<pre><span class="tp">ComPtr</span>&lt;<span class="tp">ID3D11Texture2D</span>&gt; backBuffer = <span class="kw">nullptr</span>;
+<span class="kw">if</span> (<span class="fn">FAILED</span>(_swapChain-&gt;<span class="fn">GetBuffer</span>(<span class="num">0</span>, __uuidof(<span class="tp">ID3D11Texture2D</span>), (<span class="tp">void</span>**)backBuffer.<span class="fn">GetAddressOf</span>())))
+{
+    <span class="tp">LogManager</span>::<span class="fn">Instance</span>().<span class="fn">Fatal</span>(<span class="str">"_swapChain-&gt;GetBuffer Error!"</span>);
+    <span class="kw">return</span> <span class="kw">false</span>;
+}
+
+<span class="kw">if</span> (<span class="fn">FAILED</span>(_device-&gt;<span class="fn">CreateRenderTargetView</span>(backBuffer.<span class="fn">Get</span>(), <span class="kw">nullptr</span>, _targetView.<span class="fn">GetAddressOf</span>())))
+{
+    <span class="tp">LogManager</span>::<span class="fn">Instance</span>().<span class="fn">Fatal</span>(<span class="str">"CreateRenderTargetView Error!"</span>);
+    <span class="kw">return</span> <span class="kw">false</span>;
+}</pre>
+    </div>
+
+    <!-- 3-5 DepthStencil -->
+    <h3>5. DepthStencil — 깊이 + 스텐실 버퍼</h3>
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> 깊이/스텐실 버퍼 생성 <span class="filename">Core/Device.cpp</span></div>
+<pre><span class="tp">D3D11_TEXTURE2D_DESC</span> depthDesc = {};
+depthDesc.Width = widht;
+depthDesc.Height = height;
+depthDesc.ArraySize = <span class="num">1</span>;
+depthDesc.Format = <span class="mc">DXGI_FORMAT_D24_UNORM_S8_UINT</span>;  <span class="cm">// D24: 깊이 24비트, S8: 스텐실 8비트</span>
+depthDesc.BindFlags = <span class="mc">D3D11_BIND_DEPTH_STENCIL</span>;
+depthDesc.Usage = <span class="mc">D3D11_USAGE_DEFAULT</span>;
+depthDesc.SampleDesc.Count = sampleCount;
+depthDesc.SampleDesc.Quality = <span class="num">0</span>;
+depthDesc.MipLevels = <span class="num">1</span>;
+
+<span class="tp">ComPtr</span>&lt;<span class="tp">ID3D11Texture2D</span>&gt; depthBuffer = <span class="kw">nullptr</span>;
+<span class="kw">if</span> (<span class="fn">FAILED</span>(_device-&gt;<span class="fn">CreateTexture2D</span>(&amp;depthDesc, <span class="kw">nullptr</span>, depthBuffer.<span class="fn">GetAddressOf</span>())))
+{
+    <span class="tp">LogManager</span>::<span class="fn">Instance</span>().<span class="fn">Fatal</span>(<span class="str">"CreateTexture2D Error!"</span>);
+    <span class="kw">return</span> <span class="kw">false</span>;
+}
+
+<span class="kw">if</span> (<span class="fn">FAILED</span>(_device-&gt;<span class="fn">CreateDepthStencilView</span>(depthBuffer.<span class="fn">Get</span>(), <span class="kw">nullptr</span>, _depthStencil.<span class="fn">GetAddressOf</span>())))
+{
+    <span class="tp">LogManager</span>::<span class="fn">Instance</span>().<span class="fn">Fatal</span>(<span class="str">"CreateDepthStencilView Error!"</span>);
+    <span class="kw">return</span> <span class="kw">false</span>;
+}</pre>
+    </div>
+
+    <div class="info-box">
+      <div class="info-label">깊이 vs 스텐실</div>
+      <strong>깊이 (D24)</strong> — 각 픽셀의 카메라 거리 (0~1). 가까운 물체가 먼 물체를 가리는 데 사용.<br>
+      <strong>스텐실 (S8)</strong> — 각 픽셀에 정수 값(0~255) 저장. 특정 영역만 그리기 같은 특수 효과.
+    </div>
+
+    <!-- 3-6 Viewport -->
+    <h3>6. Viewport</h3>
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> 뷰포트 설정 <span class="filename">Core/Device.cpp</span></div>
+<pre><span class="tp">D3D11_VIEWPORT</span> vp = {};
+vp.Width = <span class="kw">static_cast</span>&lt;<span class="tp">float</span>&gt;(widht);
+vp.Height = <span class="kw">static_cast</span>&lt;<span class="tp">float</span>&gt;(height);
+vp.MaxDepth = <span class="num">1</span>;
+
+_context-&gt;<span class="fn">RSSetViewports</span>(<span class="num">1</span>, &amp;vp);</pre>
+    </div>
+    <p>렌더링 결과를 화면의 어느 영역에 표시할지. 보통 전체 화면(1280x720). 화면 분할에서는 일부만 사용.</p>
+
+    <!-- SetTarget + Render -->
+    <h2 id="perframe">SetTarget + Render — 매 프레임</h2>
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> 매 프레임 호출 <span class="filename">Core/Device.cpp</span></div>
+<pre><span class="tp">void</span> <span class="tp">Device</span>::<span class="fn">SetTarget</span>()
+{
+    _context-&gt;<span class="fn">OMSetRenderTargets</span>(<span class="num">1</span>, _targetView.<span class="fn">GetAddressOf</span>(), _depthStencil.<span class="fn">Get</span>());
+}
+
+<span class="tp">void</span> <span class="tp">Device</span>::<span class="fn">Render</span>()
+{
+    _swapChain-&gt;<span class="fn">Present</span>(<span class="num">0</span>, <span class="num">0</span>);
+}</pre>
+    </div>
+
+    <ul>
+      <li><code>OMSetRenderTargets</code> — "이 RTV와 DepthStencil에 그려라" (OM = Output Merger)</li>
+      <li><code>Present(0, 0)</code> — 백 ↔ 프론트 버퍼 교체. 첫 번째 인자 0 = VSync 안 기다림</li>
+    </ul>
+
+    <!-- InitManager -->
+    <h2 id="initmanager">InitManager 변경</h2>
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> Device 초기화 추가 <span class="filename">Core/GameEngine.cpp</span></div>
+<pre><span class="kw">if</span> (<span class="kw">false</span> == <span class="tp">Device</span>::<span class="fn">Instance</span>().<span class="fn">Init</span>(_hWnd, <span class="num">1280</span>, <span class="num">720</span>, <span class="kw">true</span>))
+{
+    <span class="tp">LogManager</span>::<span class="fn">Instance</span>().<span class="fn">Fatal</span>(<span class="str">"Device Init Error!"</span>);
+    <span class="kw">return</span> <span class="kw">false</span>;
+}</pre>
+    </div>
+    <p>Device는 InitManager의 <strong>마지막</strong>에 초기화 — 다른 매니저가 다 준비된 후에 GPU 초기화.</p>
+
+    <div class="page-nav" id="page-nav"></div>
+
+  <script>
+  var PAGE_ID = "0005_02";
+  var ON_THIS_PAGE = [
+    { id: "objects", label: "DX11 객체 5개" },
+    { id: "hresult", label: "HRESULT 패턴" },
+    { id: "init", label: "Init 6단계" },
+    { id: "perframe", label: "SetTarget + Render" },
+    { id: "initmanager", label: "InitManager 변경" },
+  ];
+  </script>
+  <script src="nav.js"></script>
+  </main>
+</body>
+</html>

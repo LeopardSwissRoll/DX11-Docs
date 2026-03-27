@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>정점 데이터: CPU에서 GPU까지 | DX11 노트</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <header class="header">
+    <button class="hamburger" id="hamburger" aria-label="메뉴 열기">
+      <span></span><span></span><span></span>
+    </button>
+    <div class="header-logo">
+      <a href="index.html" style="color:inherit;text-decoration:none">DX11 NOTE</a>
+      <span class="subtitle">Deep Dive</span>
+    </div>
+    <button class="theme-toggle" id="themeToggle" aria-label="테마 전환">
+      <span class="theme-toggle-icon"></span>
+    </button>
+  </header>
+
+  <div class="sidebar-overlay" id="sidebarOverlay"></div>
+  <nav class="sidebar" id="sidebar"></nav>
+
+  <main class="main-content content">
+    <div class="page-title fade-in">
+      <span class="tag tag-detail">DEEP DIVE</span>
+      <h1>정점 데이터<br>CPU에서 GPU까지</h1>
+      <p class="page-desc">삼각형 하나를 그리려면 "꼭짓점 3개의 위치와 색"을 GPU에 전달해야 한다. C++ 구조체에서 GPU 메모리까지의 여정.</p>
+    </div>
+
+    <!-- FVertexColor -->
+    <h2 id="vertexcolor">FVertexColor — 정점 하나의 데이터</h2>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> 정점 구조체 <span class="filename">Common/Info.h</span></div>
+<pre><span class="kw">struct</span> <span class="tp">FVertexColor</span>
+{
+    <span class="fn">FVertexColor</span>() {}
+    <span class="fn">FVertexColor</span>(<span class="kw">const</span> <span class="tp">FVector3D</span>&amp; pos, <span class="kw">const</span> <span class="tp">FVector4D</span>&amp; color) : _pos(pos), _color(color)
+    {
+    }
+    <span class="fn">FVertexColor</span>(<span class="tp">float</span> x, <span class="tp">float</span> y, <span class="tp">float</span> z, <span class="tp">float</span> r, <span class="tp">float</span> g, <span class="tp">float</span> b, <span class="tp">float</span> a)
+    {
+        _pos._x = x; _pos._y = y; _pos._z = z;
+        _color._x = r; _color._y = g; _color._z = b; _color._w = a;
+    }
+
+    <span class="tp">FVector3D</span> _pos;     <span class="cm">// 위치 (x, y, z)</span>
+    <span class="tp">FVector4D</span> _color;   <span class="cm">// 색상 (r, g, b, a)</span>
+};</pre>
+    </div>
+
+    <p>정점 하나 = <strong>위치 + 색</strong>. <code>FVector3D</code>(12바이트) + <code>FVector4D</code>(16바이트) = <strong>28바이트/정점</strong>.</p>
+
+    <!-- FVertexColor 메모리 레이아웃 -->
+    <div class="mem-scene fade-in">
+      <div class="mem-scene-title">FVertexColor 메모리 레이아웃 — 28 bytes</div>
+      <div style="display:flex;gap:0;flex-wrap:wrap;margin-bottom:8px">
+        <div style="display:flex;flex-direction:column;align-items:center">
+          <div style="display:flex;gap:2px">
+            <div class="mem-cell used" style="min-width:44px;height:36px;font-size:9px;border-radius:4px 0 0 4px">x<br><span style="font-size:8px">4B</span></div>
+            <div class="mem-cell used" style="min-width:44px;height:36px;font-size:9px;border-radius:0">y<br><span style="font-size:8px">4B</span></div>
+            <div class="mem-cell used" style="min-width:44px;height:36px;font-size:9px;border-radius:0 4px 4px 0">z<br><span style="font-size:8px">4B</span></div>
+          </div>
+          <div style="font-size:10px;color:var(--accent);margin-top:4px;font-family:var(--font-code)">_pos (12B) — offset: 0</div>
+        </div>
+        <div style="width:4px"></div>
+        <div style="display:flex;flex-direction:column;align-items:center">
+          <div style="display:flex;gap:2px">
+            <div class="mem-cell rent" style="min-width:44px;height:36px;font-size:9px;border-radius:4px 0 0 4px">r<br><span style="font-size:8px">4B</span></div>
+            <div class="mem-cell rent" style="min-width:44px;height:36px;font-size:9px;border-radius:0">g<br><span style="font-size:8px">4B</span></div>
+            <div class="mem-cell rent" style="min-width:44px;height:36px;font-size:9px;border-radius:0">b<br><span style="font-size:8px">4B</span></div>
+            <div class="mem-cell rent" style="min-width:44px;height:36px;font-size:9px;border-radius:0 4px 4px 0">a<br><span style="font-size:8px">4B</span></div>
+          </div>
+          <div style="font-size:10px;color:var(--accent-green);margin-top:4px;font-family:var(--font-code)">_color (16B) — offset: 12</div>
+        </div>
+      </div>
+      <p style="font-size:11px;color:var(--text-muted)">InputLayout의 AlignedByteOffset이 0과 12인 이유 — _pos가 0~11바이트, _color가 12~27바이트.</p>
+    </div>
+
+    <!-- 버퍼 구조체 -->
+    <h2 id="buffers">FVertexBuffer / FIndexBuffer</h2>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> 버퍼 구조체 <span class="filename">Common/Info.h</span></div>
+<pre><span class="kw">struct</span> <span class="tp">FVertexBuffer</span>
+{
+    <span class="tp">ComPtr</span>&lt;<span class="tp">ID3D11Buffer</span>&gt; _buffer = <span class="kw">nullptr</span>;   <span class="cm">// GPU에 있는 버텍스 버퍼</span>
+    <span class="tp">int32</span> _size = <span class="num">0</span>;                           <span class="cm">// 정점 한 개당 크기</span>
+    <span class="tp">int32</span> _count = <span class="num">0</span>;                          <span class="cm">// 정점의 개수</span>
+    <span class="tp">std::vector</span>&lt;<span class="tp">byte</span>&gt; _data;                   <span class="cm">// GPU 전송 전 RAM에 들고 있는 정점 정보</span>
+};
+
+<span class="kw">struct</span> <span class="tp">FIndexBuffer</span>
+{
+    <span class="tp">ComPtr</span>&lt;<span class="tp">ID3D11Buffer</span>&gt; _buffer = <span class="kw">nullptr</span>;   <span class="cm">// GPU에 있는 인덱스 버퍼</span>
+    <span class="tp">int32</span> _size = <span class="num">0</span>;                           <span class="cm">// 인덱스 한 개의 크기</span>
+    <span class="tp">int32</span> _count = <span class="num">0</span>;                          <span class="cm">// 인덱스의 총 개수</span>
+    <span class="tp">DXGI_FORMAT</span> _fmt = <span class="mc">DXGI_FORMAT_UNKNOWN</span>;    <span class="cm">// 데이터 해석 방식</span>
+    <span class="tp">std::vector</span>&lt;<span class="tp">byte</span>&gt; _data;                   <span class="cm">// GPU 전송 전 RAM에 들고 있는 인덱스 데이터</span>
+};</pre>
+    </div>
+
+    <div class="info-box">
+      <div class="info-label">왜 CPU 사본(_data)을 들고 있나?</div>
+      GPU에 올린 데이터는 <strong>읽어오기 어려워</strong>. 나중에 콜리전 체크나 CPU 연산이 필요하면 <code>_data</code>에서 가져다 씀.
+    </div>
+
+    <!-- 인덱스 버퍼 -->
+    <h2 id="indexbuffer">인덱스 버퍼 — 왜 필요한가?</h2>
+
+    <div class="mem-scene fade-in">
+      <div class="mem-scene-title">사각형: 정점 6개 중복 vs 정점 4개 + 인덱스 6개</div>
+      <div class="compare-grid">
+        <div class="compare-item bad">
+          <div class="compare-label">인덱스 없이</div>
+          <div style="font-family:var(--font-code);font-size:11px;color:var(--text-secondary);line-height:1.8">
+            <div style="display:flex;gap:3px;flex-wrap:wrap;margin-bottom:6px">
+              <div class="mem-cell used" style="min-width:28px;height:24px;font-size:8px">v0</div>
+              <div class="mem-cell used" style="min-width:28px;height:24px;font-size:8px">v1</div>
+              <div class="mem-cell used" style="min-width:28px;height:24px;font-size:8px">v2</div>
+              <div class="mem-cell dead" style="min-width:28px;height:24px;font-size:8px;text-decoration:none">v0</div>
+              <div class="mem-cell dead" style="min-width:28px;height:24px;font-size:8px;text-decoration:none">v2</div>
+              <div class="mem-cell used" style="min-width:28px;height:24px;font-size:8px">v3</div>
+            </div>
+            v0, v2가 <strong style="color:var(--accent-red)">중복</strong><br>
+            28B × 6 = <strong>168B</strong>
+          </div>
+        </div>
+        <div class="compare-item good">
+          <div class="compare-label">인덱스 사용</div>
+          <div style="font-family:var(--font-code);font-size:11px;color:var(--text-secondary);line-height:1.8">
+            <div style="display:flex;gap:3px;flex-wrap:wrap;margin-bottom:6px">
+              <div class="mem-cell rent" style="min-width:28px;height:24px;font-size:8px">v0</div>
+              <div class="mem-cell rent" style="min-width:28px;height:24px;font-size:8px">v1</div>
+              <div class="mem-cell rent" style="min-width:28px;height:24px;font-size:8px">v2</div>
+              <div class="mem-cell rent" style="min-width:28px;height:24px;font-size:8px">v3</div>
+              <span style="font-size:9px;color:var(--text-muted);padding:4px">+</span>
+              <div class="mem-cell free" style="min-width:18px;height:24px;font-size:8px">0</div>
+              <div class="mem-cell free" style="min-width:18px;height:24px;font-size:8px">1</div>
+              <div class="mem-cell free" style="min-width:18px;height:24px;font-size:8px">2</div>
+              <div class="mem-cell free" style="min-width:18px;height:24px;font-size:8px">0</div>
+              <div class="mem-cell free" style="min-width:18px;height:24px;font-size:8px">2</div>
+              <div class="mem-cell free" style="min-width:18px;height:24px;font-size:8px">3</div>
+            </div>
+            <strong style="color:var(--accent-green)">중복 없음</strong><br>
+            28B × 4 + 2B × 6 = <strong>124B</strong> <span style="color:var(--accent-green)">(26% 절약)</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <p>현재 삼각형: 정점 3개 + 인덱스 <code>{0, 1, 2}</code>. <code>uint16</code> = 2바이트, <code>DXGI_FORMAT_R16_UINT</code>.</p>
+
+    <!-- MeshManager::Init -->
+    <h2 id="triangle">MeshManager::Init() — 삼각형 정의</h2>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> 삼각형 데이터 <span class="filename">Core/MeshManager.cpp</span></div>
+<pre><span class="tp">FVertexColor</span> triangle[<span class="num">3</span>]
+{
+    <span class="tp">FVertexColor</span>(<span class="num">0.f</span>, <span class="num">0.5f</span>, <span class="num">0.f</span>, <span class="num">1.f</span>, <span class="num">0.f</span>, <span class="num">0.f</span>, <span class="num">1.f</span>),     <span class="cm">// 위: 빨강</span>
+    <span class="tp">FVertexColor</span>(<span class="num">0.5f</span>, <span class="num">-0.5f</span>, <span class="num">0.f</span>, <span class="num">0.f</span>, <span class="num">1.f</span>, <span class="num">0.f</span>, <span class="num">1.f</span>),   <span class="cm">// 오른쪽: 초록</span>
+    <span class="tp">FVertexColor</span>(<span class="num">-0.5f</span>, <span class="num">-0.5f</span>, <span class="num">0.f</span>, <span class="num">0.f</span>, <span class="num">0.f</span>, <span class="num">1.f</span>, <span class="num">1.f</span>)  <span class="cm">// 왼쪽: 파랑</span>
+};
+
+<span class="tp">uint16</span> triangleIndex[<span class="num">3</span>] = { <span class="num">0</span>, <span class="num">1</span>, <span class="num">2</span> };
+
+<span class="kw">if</span> (!<span class="fn">CreateMesh</span>(<span class="str">"Triangle"</span>, triangle, <span class="kw">sizeof</span>(<span class="tp">FVertexColor</span>), <span class="num">3</span>, <span class="mc">D3D11_USAGE_DEFAULT</span>,
+    <span class="mc">D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST</span>, triangleIndex, <span class="kw">sizeof</span>(<span class="tp">uint16</span>), <span class="num">3</span>,
+    <span class="mc">DXGI_FORMAT_R16_UINT</span>))
+    <span class="kw">return</span> <span class="kw">false</span>;</pre>
+    </div>
+
+    <!-- 삼각형 3정점 카드 -->
+    <div class="mem-scene fade-in">
+      <div class="mem-scene-title">삼각형 3정점 — 좌표 + 색상</div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;justify-content:center">
+        <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:14px;min-width:130px;text-align:center">
+          <div style="width:16px;height:16px;border-radius:50%;background:#ff0000;margin:0 auto 8px"></div>
+          <div style="font-family:var(--font-code);font-size:11px;color:var(--text-primary);font-weight:600">v0 — 위</div>
+          <div style="font-family:var(--font-code);font-size:10px;color:var(--text-secondary);margin-top:4px">pos: (0, 0.5, 0)</div>
+          <div style="font-family:var(--font-code);font-size:10px;color:#ff4444;margin-top:2px">color: (1, 0, 0, 1)</div>
+        </div>
+        <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:14px;min-width:130px;text-align:center">
+          <div style="width:16px;height:16px;border-radius:50%;background:#00ff00;margin:0 auto 8px"></div>
+          <div style="font-family:var(--font-code);font-size:11px;color:var(--text-primary);font-weight:600">v1 — 오른쪽</div>
+          <div style="font-family:var(--font-code);font-size:10px;color:var(--text-secondary);margin-top:4px">pos: (0.5, -0.5, 0)</div>
+          <div style="font-family:var(--font-code);font-size:10px;color:#44ff44;margin-top:2px">color: (0, 1, 0, 1)</div>
+        </div>
+        <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:14px;min-width:130px;text-align:center">
+          <div style="width:16px;height:16px;border-radius:50%;background:#0000ff;margin:0 auto 8px"></div>
+          <div style="font-family:var(--font-code);font-size:11px;color:var(--text-primary);font-weight:600">v2 — 왼쪽</div>
+          <div style="font-family:var(--font-code);font-size:10px;color:var(--text-secondary);margin-top:4px">pos: (-0.5, -0.5, 0)</div>
+          <div style="font-family:var(--font-code);font-size:10px;color:#4444ff;margin-top:2px">color: (0, 0, 1, 1)</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="info-box">
+      <div class="info-label">NDC (Normalized Device Coordinates)</div>
+      현재 VS에서 변환 없이 패스스루니까, 좌표는 NDC 기준:<br>
+      x: -1(왼쪽) ~ +1(오른쪽) / y: -1(아래) ~ +1(위) / z: 0(가까이) ~ 1(멀리)<br>
+      <code>(0, 0.5, 0)</code> = 화면 중앙에서 위로 절반.
+    </div>
+
+    <!-- CreateMesh -->
+    <h2 id="createmesh">Mesh::CreateMesh() — CPU → GPU</h2>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> CPU 사본 + GPU 버퍼 생성 <span class="filename">Core/Mesh.cpp</span></div>
+<pre><span class="tp">bool</span> <span class="tp">Mesh</span>::<span class="fn">CreateMesh</span>(<span class="tp">void</span>* vertexData, <span class="tp">int32</span> size, <span class="tp">int32</span> count, <span class="tp">D3D11_USAGE</span> vertexUsage,
+    <span class="tp">D3D11_PRIMITIVE_TOPOLOGY</span> primitive, <span class="tp">void</span>* indexData, <span class="tp">int32</span> indexSize, <span class="tp">int32</span> indexCount,
+    <span class="tp">DXGI_FORMAT</span> fmt, <span class="tp">D3D11_USAGE</span> indexUsage)
+{
+    _vertexBuffer._size = size;
+    _vertexBuffer._count = count;
+    _vertexBuffer._data.<span class="fn">resize</span>(size * count);
+    <span class="fn">memcpy</span>(_vertexBuffer._data.<span class="fn">data</span>(), vertexData, size * count);
+
+    <span class="kw">if</span> (!<span class="fn">CreateBuffer</span>(_vertexBuffer._buffer, <span class="mc">D3D11_BIND_VERTEX_BUFFER</span>, vertexData, size, count, vertexUsage))
+        <span class="kw">return</span> <span class="kw">false</span>;
+
+    _primitive = primitive;
+
+    <span class="kw">if</span> (indexData)
+    {
+        _indexBuffer._size = indexSize;
+        _indexBuffer._count = indexCount;
+        _indexBuffer._data.<span class="fn">resize</span>(indexSize * indexCount);
+        _indexBuffer._fmt = fmt;
+        <span class="fn">memcpy</span>(_indexBuffer._data.<span class="fn">data</span>(), indexData, indexSize * indexCount);
+
+        <span class="kw">if</span> (!<span class="fn">CreateBuffer</span>(_indexBuffer._buffer, <span class="mc">D3D11_BIND_INDEX_BUFFER</span>, indexData, indexSize, indexCount, indexUsage))
+            <span class="kw">return</span> <span class="kw">false</span>;
+    }
+
+    <span class="kw">return</span> <span class="kw">true</span>;
+}</pre>
+    </div>
+
+    <!-- CreateBuffer -->
+    <h2 id="createbuffer">CreateBuffer() — D3D11 버퍼 생성</h2>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> GPU 버퍼 생성 <span class="filename">Core/Mesh.cpp</span></div>
+<pre><span class="tp">bool</span> <span class="tp">Mesh</span>::<span class="fn">CreateBuffer</span>(<span class="tp">ComPtr</span>&lt;<span class="tp">ID3D11Buffer</span>&gt;&amp; buffer, <span class="tp">D3D11_BIND_FLAG</span> flag,
+    <span class="tp">void</span>* data, <span class="tp">int32</span> size, <span class="tp">int32</span> count, <span class="tp">D3D11_USAGE</span> usage)
+{
+    <span class="tp">D3D11_BUFFER_DESC</span> bufferDesc = {};
+    bufferDesc.ByteWidth = size * count;         <span class="cm">// 버퍼 총 크기</span>
+    bufferDesc.Usage = usage;                     <span class="cm">// DEFAULT, DYNAMIC 등</span>
+    bufferDesc.BindFlags = flag;                  <span class="cm">// VERTEX_BUFFER or INDEX_BUFFER</span>
+    bufferDesc.StructureByteStride = size;
+
+    <span class="kw">if</span> (usage == <span class="mc">D3D11_USAGE_DYNAMIC</span>)
+        bufferDesc.CPUAccessFlags = <span class="mc">D3D11_CPU_ACCESS_WRITE</span>;
+    <span class="kw">else if</span> (usage == <span class="mc">D3D11_USAGE_STAGING</span>)
+        bufferDesc.CPUAccessFlags = <span class="mc">D3D11_CPU_ACCESS_WRITE</span> | <span class="mc">D3D11_CPU_ACCESS_READ</span>;
+
+    <span class="tp">D3D11_SUBRESOURCE_DATA</span> bufferData = {};
+    bufferData.pSysMem = data;
+
+    <span class="kw">if</span>(<span class="fn">FAILED</span>(<span class="tp">Device</span>::<span class="fn">Instance</span>().<span class="fn">GetDevice</span>()-&gt;<span class="fn">CreateBuffer</span>(&amp;bufferDesc, &amp;bufferData, buffer.<span class="fn">GetAddressOf</span>())))
+        <span class="kw">return</span> <span class="kw">false</span>;
+
+    <span class="kw">return</span> <span class="kw">true</span>;
+}</pre>
+    </div>
+
+    <!-- Usage 비교 -->
+    <div class="type-table-wrap fade-in">
+      <table class="type-table">
+        <thead><tr><th>D3D11_USAGE</th><th>CPU 읽기</th><th>CPU 쓰기</th><th>GPU 읽기</th><th>GPU 쓰기</th></tr></thead>
+        <tbody>
+          <tr><td class="t-name" style="color:var(--accent-green)">DEFAULT</td><td class="t-desc">X</td><td class="t-desc">X</td><td class="t-desc" style="color:var(--accent-green)">O</td><td class="t-desc" style="color:var(--accent-green)">O</td></tr>
+          <tr><td class="t-name">DYNAMIC</td><td class="t-desc">X</td><td class="t-desc" style="color:var(--accent-green)">O</td><td class="t-desc" style="color:var(--accent-green)">O</td><td class="t-desc">X</td></tr>
+          <tr><td class="t-name">STAGING</td><td class="t-desc" style="color:var(--accent-green)">O</td><td class="t-desc" style="color:var(--accent-green)">O</td><td class="t-desc">X</td><td class="t-desc">X</td></tr>
+          <tr><td class="t-name">IMMUTABLE</td><td class="t-desc">X</td><td class="t-desc">X</td><td class="t-desc" style="color:var(--accent-green)">O</td><td class="t-desc">X</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>현재 삼각형은 <strong>DEFAULT</strong> — GPU만 읽고 씀.</p>
+
+    <!-- D3D11_USAGE 화살표 시각화 -->
+    <div class="mem-scene fade-in">
+      <div class="mem-scene-title">D3D11_USAGE — CPU↔GPU 접근 방향</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div style="background:var(--bg-card);border:1px solid var(--accent-green);border-left:3px solid var(--accent-green);border-radius:6px;padding:12px;text-align:center">
+          <div style="font-family:var(--font-code);font-size:11px;font-weight:600;color:var(--accent-green)">DEFAULT</div>
+          <div style="margin:8px 0;font-size:18px;color:var(--text-muted)">CPU ✕ ← → GPU ✓</div>
+          <div style="font-size:10px;color:var(--text-secondary)">GPU 전용. 가장 빠름.</div>
+        </div>
+        <div style="background:var(--bg-card);border:1px solid var(--accent);border-left:3px solid var(--accent);border-radius:6px;padding:12px;text-align:center">
+          <div style="font-family:var(--font-code);font-size:11px;font-weight:600;color:var(--accent)">DYNAMIC</div>
+          <div style="margin:8px 0;font-size:18px;color:var(--text-muted)">CPU → GPU (쓰기만)</div>
+          <div style="font-size:10px;color:var(--text-secondary)">자주 업데이트. 파티클 등.</div>
+        </div>
+        <div style="background:var(--bg-card);border:1px solid var(--accent-orange);border-left:3px solid var(--accent-orange);border-radius:6px;padding:12px;text-align:center">
+          <div style="font-family:var(--font-code);font-size:11px;font-weight:600;color:var(--accent-orange)">STAGING</div>
+          <div style="margin:8px 0;font-size:18px;color:var(--text-muted)">CPU ↔ GPU (양방향)</div>
+          <div style="font-size:10px;color:var(--text-secondary)">중간 복사 버퍼. 느림.</div>
+        </div>
+        <div style="background:var(--bg-card);border:1px solid var(--text-muted);border-left:3px solid var(--text-muted);border-radius:6px;padding:12px;text-align:center">
+          <div style="font-family:var(--font-code);font-size:11px;font-weight:600;color:var(--text-secondary)">IMMUTABLE</div>
+          <div style="margin:8px 0;font-size:18px;color:var(--text-muted)">CPU ✕ → GPU (읽기만)</div>
+          <div style="font-size:10px;color:var(--text-secondary)">절대 안 바뀌는 데이터.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Mesh::Render -->
+    <h2 id="meshrender">Mesh::Render() — 매 프레임</h2>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> IA 바인딩 + Draw <span class="filename">Core/Mesh.cpp</span></div>
+<pre><span class="tp">void</span> <span class="tp">Mesh</span>::<span class="fn">Render</span>()
+{
+    <span class="tp">uint32</span> stride = _vertexBuffer._size;
+    <span class="tp">uint32</span> offset = <span class="num">0</span>;
+
+    <span class="tp">Device</span>::<span class="fn">Instance</span>().<span class="fn">GetContext</span>()-&gt;<span class="fn">IASetPrimitiveTopology</span>(_primitive);
+    <span class="tp">Device</span>::<span class="fn">Instance</span>().<span class="fn">GetContext</span>()-&gt;<span class="fn">IASetVertexBuffers</span>(<span class="num">0</span>, <span class="num">1</span>, _vertexBuffer._buffer.<span class="fn">GetAddressOf</span>(), &amp;stride, &amp;offset);
+
+    <span class="tp">Device</span>::<span class="fn">Instance</span>().<span class="fn">GetContext</span>()-&gt;<span class="fn">IASetIndexBuffer</span>(_indexBuffer._buffer.<span class="fn">Get</span>(), _indexBuffer._fmt, <span class="num">0</span>);
+
+    <span class="tp">Device</span>::<span class="fn">Instance</span>().<span class="fn">GetContext</span>()-&gt;<span class="fn">DrawIndexed</span>(_indexBuffer._count, <span class="num">0</span>, <span class="num">0</span>);
+}</pre>
+    </div>
+
+    <!-- 데이터 흐름 -->
+    <h2 id="dataflow">데이터 흐름 요약</h2>
+
+    <div class="mem-scene fade-in">
+      <div class="mem-scene-title">CPU → GPU 전송 경로</div>
+      <div class="mem-steps">
+        <div class="mem-step"><div class="mem-step-num">1</div><div class="mem-step-text"><code>FVertexColor triangle[3]</code> — C++ 배열 (스택)</div></div>
+        <div class="mem-step"><div class="mem-step-num">2</div><div class="mem-step-text"><code>memcpy → _data</code> — CPU 사본 저장 (vector&lt;byte&gt;)</div></div>
+        <div class="mem-step"><div class="mem-step-num">3</div><div class="mem-step-text"><code>CreateBuffer → ID3D11Buffer</code> — GPU VRAM에 업로드</div></div>
+        <div class="mem-step"><div class="mem-step-num">4</div><div class="mem-step-text"><code>IASetVertexBuffers</code> — Input Assembler에 바인딩</div></div>
+        <div class="mem-step"><div class="mem-step-num">5</div><div class="mem-step-text"><code>DrawIndexed(3)</code> — GPU 파이프라인 시작!</div></div>
+      </div>
+    </div>
+
+    <div class="page-nav" id="page-nav"></div>
+
+  <script>
+  var PAGE_ID = "0006_02";
+  var ON_THIS_PAGE = [
+    { id: "vertexcolor", label: "FVertexColor" },
+    { id: "buffers", label: "버퍼 구조체" },
+    { id: "indexbuffer", label: "인덱스 버퍼" },
+    { id: "triangle", label: "삼각형 정의" },
+    { id: "createmesh", label: "CreateMesh" },
+    { id: "createbuffer", label: "CreateBuffer" },
+    { id: "meshrender", label: "Mesh::Render" },
+    { id: "dataflow", label: "데이터 흐름" },
+  ];
+  </script>
+  <script src="nav.js"></script>
+  </main>
+</body>
+</html>

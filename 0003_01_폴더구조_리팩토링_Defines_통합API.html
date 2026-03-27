@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Day03 — 폴더 구조 + Defines 통합 API | DX11 노트</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <header class="header">
+    <button class="hamburger" id="hamburger" aria-label="메뉴 열기">
+      <span></span><span></span><span></span>
+    </button>
+    <div class="header-logo">
+      <a href="index.html" style="color:inherit;text-decoration:none">DX11 NOTE</a>
+      <span class="subtitle">Day 03</span>
+    </div>
+    <button class="theme-toggle" id="themeToggle" aria-label="테마 전환">
+      <span class="theme-toggle-icon"></span>
+    </button>
+  </header>
+
+  <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+  <nav class="sidebar" id="sidebar"></nav>
+
+  <main class="main-content content">
+    <div class="page-title fade-in">
+      <span class="tag tag-day">DAY 03</span>
+      <h1>폴더 구조 리팩토링 +<br>Defines.h 통합 API</h1>
+      <p class="page-desc">Common/Core/Object 폴더 분리, Ptr&lt;T&gt;/New&lt;T&gt;()/Delete&lt;T&gt;() 통합 API, ObjectPool type_index 전환.</p>
+    </div>
+
+    <!-- 변경 파일 -->
+    <h2 id="files">변경된 파일</h2>
+    <div class="file-grid fade-in fade-in-d1">
+      <div class="file-card"><div class="file-icon h">h</div><div><div class="file-name">Common/Info.h</div><div class="file-role">이동+수정 — 정수 타입 앨리어스</div></div></div>
+      <div class="file-card"><div class="file-icon h">h</div><div><div class="file-name">Common/Singleton.h</div><div class="file-role">이동 — 변경 없음</div></div></div>
+      <div class="file-card"><div class="file-icon h">h</div><div><div class="file-name">Core/Defines.h</div><div class="file-role">신규 — Ptr, New, Delete 통합 API</div></div></div>
+      <div class="file-card"><div class="file-icon h">h</div><div><div class="file-name">Core/Object.h</div><div class="file-role">이동 — 변경 없음</div></div></div>
+      <div class="file-card"><div class="file-icon h">h</div><div><div class="file-name">Core/ObjectPool.h</div><div class="file-role">이동+수정 — type_index 키</div></div></div>
+      <div class="file-card"><div class="file-icon cpp">cpp</div><div><div class="file-name">Core/ObjectPool.cpp</div><div class="file-role">이동+수정 — PreAlloc</div></div></div>
+      <div class="file-card"><div class="file-icon h">h</div><div><div class="file-name">Core/MemoryPool.h</div><div class="file-role">이동+수정 — #ifdef 범위 확장</div></div></div>
+      <div class="file-card"><div class="file-icon h">h</div><div><div class="file-name">Core/SegmentPool.h</div><div class="file-role">이동 — 변경 없음</div></div></div>
+      <div class="file-card"><div class="file-icon h">h</div><div><div class="file-name">Object/TestObject.h</div><div class="file-role">이동 — include 경로 변경</div></div></div>
+      <div class="file-card"><div class="file-icon cpp">cpp</div><div><div class="file-name">Client.cpp</div><div class="file-role">수정 — include 경로 + New&lt;T&gt;()</div></div></div>
+    </div>
+
+    <!-- 폴더 구조 -->
+    <h2 id="folder">폴더 구조 분리</h2>
+
+    <div class="mem-scene fade-in fade-in-d1">
+      <div class="mem-scene-title">Before (v2) → After (v3)</div>
+      <div class="compare-grid">
+        <div class="compare-item bad">
+          <div class="compare-label">이전 — 전부 한 폴더</div>
+          <div style="font-family:var(--font-code);font-size:11px;line-height:1.8;color:var(--text-secondary)">
+            Client/<br>
+            ├── Client.cpp<br>
+            ├── Info.h<br>
+            ├── Singleton.h<br>
+            ├── Object.h/cpp<br>
+            ├── ObjectPool.h/cpp<br>
+            ├── MemoryPool.h/cpp<br>
+            ├── SegmentPool.h/cpp<br>
+            └── TestObject.h/cpp
+          </div>
+        </div>
+        <div class="compare-item good">
+          <div class="compare-label">현재 — 역할별 분리</div>
+          <div style="font-family:var(--font-code);font-size:11px;line-height:1.8;color:var(--text-secondary)">
+            Client/<br>
+            ├── <strong style="color:var(--accent-orange)">Common/</strong> Info.h, Singleton.h<br>
+            ├── <strong style="color:var(--accent)">Core/</strong> Defines.h, Object.h,<br>
+            │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ObjectPool, MemoryPool,<br>
+            │&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; SegmentPool<br>
+            └── <strong style="color:var(--accent-green)">Object/</strong> TestObject.h/cpp
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="info-box">
+      <div class="info-label">폴더 역할</div>
+      <strong style="color:var(--accent-orange)">Common</strong> — 프로젝트 전체에서 쓰는 기반 유틸 (Singleton, 타입 정의)<br>
+      <strong style="color:var(--accent)">Core</strong> — 엔진 핵심 시스템 (Object, Pool, Memory)<br>
+      <strong style="color:var(--accent-green)">Object</strong> — 게임 오브젝트 구현체 (앞으로 Monster, Bullet 등 추가)
+    </div>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> include 경로 변경 <span class="filename">Client.cpp</span></div>
+<pre><span class="cm">// Before</span>
+<span class="pp">#include</span> <span class="str">"TestObject.h"</span>
+<span class="pp">#include</span> <span class="str">"ObjectPool.h"</span>
+
+<span class="cm">// After</span>
+<span class="pp">#include</span> <span class="str">"Object/TestObject.h"</span>
+<span class="pp">#include</span> <span class="str">"Core/ObjectPool.h"</span>
+<span class="pp">#include</span> <span class="str">"Core/Defines.h"</span></pre>
+    </div>
+
+    <!-- Defines.h -->
+    <h2 id="defines">Defines.h — 통합 API</h2>
+    <p>이전 버전에서 논의한 "클래스마다 using 6줄" 문제가 <strong>실제로 해결됨!</strong></p>
+
+    <div class="mem-scene fade-in">
+      <div class="mem-scene-title">Before → After: 보일러플레이트 제거</div>
+      <div class="compare-grid">
+        <div class="compare-item bad">
+          <div class="compare-label">이전 — 클래스마다 6줄</div>
+          <div style="font-family:var(--font-code);font-size:11px;line-height:1.6;color:var(--text-secondary)">
+            #ifdef _USE_MEMORY_POOL<br>
+            using TestObjectPtr = TestObject*;<br>
+            using WeakTestObject = TestObject*;<br>
+            #elif _USE_OBJECT_POOL<br>
+            using TestObjectPtr = TestObject*;<br>
+            using WeakTestObject = TestObject*;<br>
+            #else<br>
+            using TestObjectPtr = shared_ptr&lt;TestObject&gt;;<br>
+            using WeakTestObject = weak_ptr&lt;TestObject&gt;;<br>
+            #endif<br><br>
+            <span style="color:var(--accent-red)">Monster 추가? 6줄 더. Bullet? 6줄 더...</span>
+          </div>
+        </div>
+        <div class="compare-item good">
+          <div class="compare-label">현재 — 한 번 정의하면 끝</div>
+          <div style="font-family:var(--font-code);font-size:11px;line-height:1.6;color:var(--text-secondary)">
+            template&lt;typename T&gt;<br>
+            using Ptr = T*; <span style="color:var(--accent-green)">// or shared_ptr&lt;T&gt;</span><br><br>
+            template&lt;typename T&gt;<br>
+            using Weak = T*; <span style="color:var(--accent-green)">// or weak_ptr&lt;T&gt;</span><br><br>
+            <span style="color:var(--accent-green)">클래스 100개여도 Defines.h 수정 불필요!</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <h3>MemoryPool 전략 버전</h3>
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> _USE_MEMORY_POOL 분기 <span class="filename">Core/Defines.h</span></div>
+<pre><span class="kw">template</span>&lt;<span class="kw">typename</span> <span class="tp">T</span>&gt;
+<span class="kw">using</span> <span class="tp">Ptr</span> = <span class="tp">T</span>*; <span class="cm">//메모리풀을 사용할때는 원시포인터</span>
+
+<span class="kw">template</span>&lt;<span class="kw">typename</span> <span class="tp">T</span>&gt;
+<span class="kw">using</span> <span class="tp">Weak</span> = <span class="tp">T</span>*; <span class="cm">//메모리풀을 사용할때는 약참조 포인터도 원시포인터</span>
+
+<span class="kw">template</span>&lt;<span class="kw">typename</span> <span class="tp">T</span>, <span class="kw">typename</span> ...<span class="tp">Args</span>&gt;
+<span class="tp">Ptr</span>&lt;<span class="tp">T</span>&gt; <span class="fn">New</span>(<span class="tp">Args</span>&amp;&amp;... args)
+{
+    <span class="kw">return</span> <span class="kw">new</span> <span class="tp">T</span>(<span class="tp">std</span>::<span class="fn">forward</span>&lt;<span class="tp">Args</span>&gt;(args)...);
+}
+
+<span class="kw">template</span>&lt;<span class="kw">typename</span> <span class="tp">T</span>&gt;
+<span class="tp">Weak</span>&lt;<span class="tp">T</span>&gt; <span class="fn">MakeWeak</span>(<span class="tp">Ptr</span>&lt;<span class="tp">T</span>&gt;&amp; ptr) { <span class="kw">return</span> ptr; }
+
+<span class="kw">template</span>&lt;<span class="kw">typename</span> <span class="tp">T</span>&gt;
+<span class="tp">void</span> <span class="fn">Delete</span>(<span class="tp">Ptr</span>&lt;<span class="tp">T</span>&gt;&amp; ptr)
+{
+    <span class="kw">delete</span> ptr;
+    ptr = <span class="kw">nullptr</span>;
+}</pre>
+    </div>
+
+    <h3>ObjectPool 전략 버전</h3>
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> _USE_OBJECT_POOL 분기 <span class="filename">Core/Defines.h</span></div>
+<pre><span class="kw">template</span>&lt;<span class="kw">typename</span> <span class="tp">T</span>&gt;
+<span class="kw">using</span> <span class="tp">Ptr</span> = <span class="tp">T</span>*; <span class="cm">//오브젝트 풀 을 사용할때는 원시포인터</span>
+
+<span class="kw">template</span>&lt;<span class="kw">typename</span> <span class="tp">T</span>&gt;
+<span class="kw">using</span> <span class="tp">Weak</span> = <span class="tp">T</span>*; <span class="cm">//오브젝트 풀 을 사용할때는 약참조 포인터도 원시포인터</span>
+
+<span class="kw">template</span>&lt;<span class="kw">typename</span> <span class="tp">T</span>, <span class="kw">typename</span> ...<span class="tp">Args</span>&gt;
+<span class="tp">Ptr</span>&lt;<span class="tp">T</span>&gt; <span class="fn">New</span>(<span class="tp">Args</span>&amp;&amp;... args)
+{
+    <span class="kw">return</span> <span class="tp">ObjectPool</span>::<span class="fn">Instance</span>().<span class="fn">Rent</span>&lt;<span class="tp">T</span>&gt;();
+}
+
+<span class="kw">template</span>&lt;<span class="kw">typename</span> <span class="tp">T</span>&gt;
+<span class="tp">Weak</span>&lt;<span class="tp">T</span>&gt; <span class="fn">MakeWeak</span>(<span class="tp">Ptr</span>&lt;<span class="tp">T</span>&gt;&amp; ptr) { <span class="kw">return</span> ptr; }
+
+<span class="kw">template</span>&lt;<span class="kw">typename</span> <span class="tp">T</span>&gt;
+<span class="tp">void</span> <span class="fn">Delete</span>(<span class="tp">Ptr</span>&lt;<span class="tp">T</span>&gt;&amp; ptr)
+{
+    <span class="tp">ObjectPool</span>::<span class="fn">Instance</span>().<span class="fn">Return</span>(ptr);
+    ptr = <span class="kw">nullptr</span>;
+}</pre>
+    </div>
+
+    <h3>shared_ptr 전략 버전</h3>
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> 기본(shared_ptr) 분기 <span class="filename">Core/Defines.h</span></div>
+<pre><span class="kw">template</span>&lt;<span class="kw">typename</span> <span class="tp">T</span>&gt;
+<span class="kw">using</span> <span class="tp">Ptr</span> = <span class="tp">std::shared_ptr</span>&lt;<span class="tp">T</span>&gt;;
+
+<span class="kw">template</span>&lt;<span class="kw">typename</span> <span class="tp">T</span>&gt;
+<span class="kw">using</span> <span class="tp">Weak</span> = <span class="tp">std::weak_ptr</span>&lt;<span class="tp">T</span>&gt;;
+
+<span class="kw">template</span>&lt;<span class="kw">typename</span> <span class="tp">T</span>, <span class="kw">typename</span> ...<span class="tp">Args</span>&gt;
+<span class="tp">Ptr</span>&lt;<span class="tp">T</span>&gt; <span class="fn">New</span>(<span class="tp">Args</span>&amp;&amp;... args)
+{
+    <span class="kw">return</span> <span class="tp">std</span>::<span class="fn">make_shared</span>&lt;<span class="tp">T</span>&gt;(<span class="tp">std</span>::<span class="fn">forward</span>&lt;<span class="tp">Args</span>&gt;(args)...);
+}
+
+<span class="kw">template</span>&lt;<span class="kw">typename</span> <span class="tp">T</span>&gt;
+<span class="tp">Weak</span>&lt;<span class="tp">T</span>&gt; <span class="fn">MakeWeak</span>(<span class="tp">Ptr</span>&lt;<span class="tp">T</span>&gt;&amp; ptr) { <span class="kw">return</span> ptr; }
+
+<span class="kw">template</span>&lt;<span class="kw">typename</span> <span class="tp">T</span>&gt;
+<span class="tp">void</span> <span class="fn">Delete</span>(<span class="tp">Ptr</span>&lt;<span class="tp">T</span>&gt;&amp; ptr)
+{
+    ptr = <span class="kw">nullptr</span>;
+}</pre>
+    </div>
+
+    <h3>사용법 — 전략과 무관하게 동일한 코드</h3>
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> 통합 API 사용 예시 <span class="filename">Client.cpp (현재 주석 처리 상태)</span></div>
+<pre><span class="cm">//Ptr&lt;TestObject&gt; test = New&lt;TestObject&gt;();</span>
+<span class="cm">//test-&gt;Param = 10;</span>
+<span class="cm">//Delete(test);</span></pre>
+    </div>
+
+    <!-- 3전략 흐름 시각화 -->
+    <div class="mem-scene fade-in">
+      <div class="mem-scene-title">New&lt;TestObject&gt;() — 빌드 구성별 내부 동작</div>
+      <div class="mem-compare">
+        <div class="mem-compare-col">
+          <div class="col-title">Debug (shared_ptr)</div>
+          <div class="mem-steps">
+            <div class="mem-step"><div class="mem-step-num">1</div><div class="mem-step-text"><code>make_shared&lt;T&gt;()</code></div></div>
+            <div class="mem-step"><div class="mem-step-num">2</div><div class="mem-step-text">힙에 객체 + control block 할당</div></div>
+            <div class="mem-step"><div class="mem-step-num">3</div><div class="mem-step-text"><code>shared_ptr&lt;T&gt;</code> 반환</div></div>
+          </div>
+        </div>
+        <div class="mem-compare-col">
+          <div class="col-title">Debug_OP (ObjectPool)</div>
+          <div class="mem-steps">
+            <div class="mem-step"><div class="mem-step-num">1</div><div class="mem-step-text"><code>ObjectPool::Rent&lt;T&gt;()</code></div></div>
+            <div class="mem-step"><div class="mem-step-num">2</div><div class="mem-step-text">큐에서 미리 만든 객체 꺼냄</div></div>
+            <div class="mem-step"><div class="mem-step-num">3</div><div class="mem-step-text"><code>T*</code> 반환</div></div>
+          </div>
+        </div>
+        <div class="mem-compare-col">
+          <div class="col-title">Debug_MP (MemoryPool)</div>
+          <div class="mem-steps">
+            <div class="mem-step"><div class="mem-step-num">1</div><div class="mem-step-text"><code>new T(forward(args)...)</code></div></div>
+            <div class="mem-step"><div class="mem-step-num">2</div><div class="mem-step-text">operator new → MemoryPool</div></div>
+            <div class="mem-step"><div class="mem-step-num">3</div><div class="mem-step-text"><code>T*</code> 반환</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Perfect Forwarding -->
+    <h2 id="forward">Perfect Forwarding</h2>
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> New 함수 시그니처 <span class="filename">Core/Defines.h</span></div>
+<pre><span class="kw">template</span>&lt;<span class="kw">typename</span> <span class="tp">T</span>, <span class="kw">typename</span> ...<span class="tp">Args</span>&gt;
+<span class="tp">Ptr</span>&lt;<span class="tp">T</span>&gt; <span class="fn">New</span>(<span class="tp">Args</span>&amp;&amp;... args)
+{
+    <span class="kw">return</span> <span class="kw">new</span> <span class="tp">T</span>(<span class="tp">std</span>::<span class="fn">forward</span>&lt;<span class="tp">Args</span>&gt;(args)...);
+}</pre>
+    </div>
+
+    <p>이 4줄에 고급 문법 3개가 들어있어:</p>
+    <ul>
+      <li><code>typename ...Args</code> — <strong>가변 인자 템플릿</strong> (인자 개수 제한 없음)</li>
+      <li><code>Args&amp;&amp;... args</code> — <strong>전달 참조</strong> (lvalue/rvalue 모두 받음)</li>
+      <li><code>std::forward&lt;Args&gt;(args)...</code> — <strong>인자의 원래 종류를 보존해서 전달</strong></li>
+    </ul>
+
+    <div class="compare-grid">
+      <div class="compare-item bad">
+        <div class="compare-label">forward 없이 (성능 손해)</div>
+        <p style="font-size:12px;color:var(--text-secondary)"><code>return new T(args...);</code><br>rvalue가 lvalue로 변질 → <strong>복사</strong> 생성자 호출</p>
+      </div>
+      <div class="compare-item good">
+        <div class="compare-label">forward 있으면 (원본 유지)</div>
+        <p style="font-size:12px;color:var(--text-secondary)"><code>return new T(std::forward&lt;Args&gt;(args)...);</code><br>rvalue 그대로 유지 → <strong>이동</strong> 생성자 호출</p>
+      </div>
+    </div>
+
+    <div class="info-box">
+      <div class="info-label">자세한 설명은?</div>
+      lvalue/rvalue, 참조 축약, forward의 동작 원리는 <a href="0003_02_가변인자_템플릿_Perfect_Forwarding.html">0003_02 — Perfect Forwarding 해부</a>에서 깊이 다룸.
+    </div>
+
+    <!-- type_index -->
+    <h2 id="typeindex">ObjectPool — type_index로 키 변경</h2>
+
+    <div class="compare-grid">
+      <div class="compare-item bad">
+        <div class="compare-label">이전 — enum 키</div>
+        <div style="font-family:var(--font-code);font-size:11px;line-height:1.6;color:var(--text-secondary)">
+          map&lt;<strong>eObjectType</strong>, queue&lt;Object*&gt;&gt;<br><br>
+          새 타입 추가 → enum 수정 필요<br>
+          Rent(eObjectType) → 타입을 2번 명시
+        </div>
+      </div>
+      <div class="compare-item good">
+        <div class="compare-label">현재 — type_index 키</div>
+        <div style="font-family:var(--font-code);font-size:11px;line-height:1.6;color:var(--text-secondary)">
+          map&lt;<strong>std::type_index</strong>, queue&lt;Object*&gt;&gt;<br><br>
+          새 타입 추가 → 아무것도 안 해도 됨<br>
+          Rent&lt;T&gt;() → 타입 1번만 명시
+        </div>
+      </div>
+    </div>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> Rent — type_index로 풀 찾기 <span class="filename">Core/ObjectPool.h</span></div>
+<pre><span class="kw">template</span>&lt;<span class="kw">typename</span> <span class="tp">T</span>&gt;
+<span class="tp">T</span>* <span class="fn">Rent</span>()
+{
+    <span class="kw">auto</span> pool = _Pools.<span class="fn">find</span>(<span class="tp">std::type_index</span>(<span class="kw">typeid</span>(<span class="tp">T</span>)));
+    <span class="kw">if</span> (pool == _Pools.<span class="fn">end</span>())
+        <span class="kw">return</span> <span class="kw">nullptr</span>;
+
+    <span class="tp">T</span>* retVal = <span class="kw">nullptr</span>;
+    <span class="kw">if</span> (pool-&gt;second.<span class="fn">empty</span>())
+    {
+        retVal = <span class="kw">new</span> <span class="tp">T</span>();
+        <span class="kw">return</span> retVal;
+    }
+    <span class="kw">else</span>
+    {
+        retVal = <span class="kw">dynamic_cast</span>&lt;<span class="tp">T</span>*&gt;(pool-&gt;second.<span class="fn">front</span>());
+        <span class="kw">if</span> (<span class="kw">nullptr</span> == retVal)
+            <span class="kw">return</span> <span class="kw">nullptr</span>;
+
+        pool-&gt;second.<span class="fn">pop</span>();
+    }
+
+    <span class="kw">return</span> retVal;
+}</pre>
+    </div>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> PreAlloc — 사전 할당 템플릿 <span class="filename">Core/ObjectPool.h</span></div>
+<pre><span class="kw">template</span>&lt;<span class="kw">typename</span> <span class="tp">T</span>&gt;
+<span class="tp">void</span> <span class="fn">PreAlloc</span>(<span class="tp">uint32</span> count)
+{
+    <span class="kw">for</span> (<span class="tp">uint32</span> i = <span class="num">0</span>; i &lt; count; ++i)
+    {
+        <span class="tp">T</span>* obj = <span class="kw">new</span> <span class="tp">T</span>();
+        _Pools[<span class="tp">std::type_index</span>(<span class="kw">typeid</span>(<span class="tp">T</span>))].<span class="fn">push</span>(obj);
+    }
+}
+
+<span class="cm">// 사용:</span>
+<span class="tp">void</span> <span class="tp">ObjectPool</span>::<span class="fn">Init</span>()
+{
+    <span class="fn">PreAlloc</span>&lt;<span class="tp">TestObject</span>&gt;(<span class="num">10</span>);
+    <span class="cm">// PreAlloc&lt;Monster&gt;(20);  ← 예시: 소스에는 없음. 나중에 이렇게 추가 가능</span>
+}</pre>
+    </div>
+
+    <div class="info-box">
+      <div class="info-label">type_index 자세히 알고 싶으면?</div>
+      RTTI, typeid, type_index의 동작 원리와 성능은 <a href="0003_03_RTTI_type_index_타입을_키로_쓴다.html">0003_03 — RTTI + type_index</a>에서 깊이 다룸.
+    </div>
+
+    <!-- Info.h -->
+    <h2 id="infoh">Info.h — 정수 타입 앨리어스</h2>
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> 정수 타입 앨리어스 <span class="filename">Common/Info.h</span></div>
+<pre><span class="kw">using</span> <span class="tp">uint8</span>  = <span class="tp">unsigned char</span>;
+<span class="kw">using</span> <span class="tp">uint16</span> = <span class="tp">unsigned short</span>;
+<span class="kw">using</span> <span class="tp">uint32</span> = <span class="tp">unsigned int</span>;
+<span class="kw">using</span> <span class="tp">uint64</span> = <span class="tp">unsigned long long</span>;
+
+<span class="kw">using</span> <span class="tp">int8</span>  = <span class="tp">char</span>;
+<span class="kw">using</span> <span class="tp">int16</span> = <span class="tp">short</span>;
+<span class="kw">using</span> <span class="tp">int32</span> = <span class="tp">int</span>;
+<span class="kw">using</span> <span class="tp">int64</span> = <span class="tp">long long</span>;</pre>
+    </div>
+
+    <p><code>unsigned int</code> 대신 <code>uint32</code>로 쓰면 <strong>크기가 명확하고 짧아</strong>. 이전에 있던 <code>TestObjectPtr</code>/<code>WeakTestObject</code> using은 <strong>전부 삭제</strong> → Defines.h의 <code>Ptr&lt;T&gt;</code>/<code>Weak&lt;T&gt;</code>로 대체됨.</p>
+
+    <!-- MakeWeak -->
+    <h2 id="makeweak">MakeWeak — 약한 참조 생성</h2>
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> MakeWeak (shared_ptr 버전 / 생 포인터 버전) <span class="filename">Core/Defines.h</span></div>
+<pre><span class="cm">// shared_ptr 버전</span>
+<span class="kw">template</span>&lt;<span class="kw">typename</span> <span class="tp">T</span>&gt;
+<span class="tp">Weak</span>&lt;<span class="tp">T</span>&gt; <span class="fn">MakeWeak</span>(<span class="tp">Ptr</span>&lt;<span class="tp">T</span>&gt;&amp; ptr)
+{
+    <span class="kw">return</span> ptr;  <span class="cm">// shared_ptr → weak_ptr 암시적 변환</span>
+}
+
+<span class="cm">// 생 포인터 버전</span>
+<span class="kw">template</span>&lt;<span class="kw">typename</span> <span class="tp">T</span>&gt;
+<span class="tp">Weak</span>&lt;<span class="tp">T</span>&gt; <span class="fn">MakeWeak</span>(<span class="tp">Ptr</span>&lt;<span class="tp">T</span>&gt;&amp; ptr)
+{
+    <span class="kw">return</span> ptr;  <span class="cm">// T* → T* 그냥 복사</span>
+}
+
+<span class="cm">// 사용:</span>
+<span class="tp">Ptr</span>&lt;<span class="tp">TestObject</span>&gt; obj = <span class="fn">New</span>&lt;<span class="tp">TestObject</span>&gt;();
+<span class="tp">Weak</span>&lt;<span class="tp">TestObject</span>&gt; weak = <span class="fn">MakeWeak</span>(obj);</pre>
+    </div>
+
+    <!-- 개선 요약 -->
+    <h2 id="summary">이번 리팩토링에서 개선된 것</h2>
+    <div class="type-table-wrap fade-in">
+      <table class="type-table">
+        <thead><tr><th>이전</th><th>현재</th><th>개선</th></tr></thead>
+        <tbody>
+          <tr><td class="t-desc">파일 전부 한 폴더</td><td class="t-name">Common/Core/Object 분리</td><td class="t-desc">역할별 정리</td></tr>
+          <tr><td class="t-desc">클래스마다 using 6줄</td><td class="t-name">Ptr&lt;T&gt;, Weak&lt;T&gt;</td><td class="t-desc">보일러플레이트 제거</td></tr>
+          <tr><td class="t-desc">new T() / delete 직접</td><td class="t-name">New&lt;T&gt;() / Delete()</td><td class="t-desc">전략 전환 시 코드 변경 불필요</td></tr>
+          <tr><td class="t-desc">eObjectType enum 키</td><td class="t-name">std::type_index 키</td><td class="t-desc">새 타입 추가 시 enum 수정 불필요</td></tr>
+          <tr><td class="t-desc">수동 for 루프 할당</td><td class="t-name">PreAlloc&lt;T&gt;(count)</td><td class="t-desc">한 줄로 끝</td></tr>
+          <tr><td class="t-desc">unsigned int 등</td><td class="t-name">uint32 등</td><td class="t-desc">크기 명확 + 짧음</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Prev / Next -->
+    <div class="page-nav" id="page-nav"></div>
+  <script>
+  var PAGE_ID = "0003_01";
+  var ON_THIS_PAGE = [
+    { id: "files", label: "변경 파일" },
+    { id: "folder", label: "폴더 구조 분리" },
+    { id: "defines", label: "Defines.h 통합 API" },
+    { id: "forward", label: "Perfect Forwarding" },
+    { id: "typeindex", label: "ObjectPool type_index" },
+    { id: "infoh", label: "Info.h 타입 앨리어스" },
+    { id: "makeweak", label: "MakeWeak" },
+    { id: "summary", label: "개선 요약" },
+  ];
+  </script>
+  <script src="nav.js"></script>
+  </main>
+</body>
+</html>

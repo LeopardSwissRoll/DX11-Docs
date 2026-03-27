@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Shader + HLSL | DX11 노트</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <header class="header">
+    <button class="hamburger" id="hamburger" aria-label="메뉴 열기">
+      <span></span><span></span><span></span>
+    </button>
+    <div class="header-logo">
+      <a href="index.html" style="color:inherit;text-decoration:none">DX11 NOTE</a>
+      <span class="subtitle">Deep Dive</span>
+    </div>
+    <button class="theme-toggle" id="themeToggle" aria-label="테마 전환">
+      <span class="theme-toggle-icon"></span>
+    </button>
+  </header>
+
+  <div class="sidebar-overlay" id="sidebarOverlay"></div>
+  <nav class="sidebar" id="sidebar"></nav>
+
+  <main class="main-content content">
+    <div class="page-title fade-in">
+      <span class="tag tag-detail">DEEP DIVE</span>
+      <h1>Shader + HLSL<br>GPU에게 "어떻게 그려"</h1>
+      <p class="page-desc">정점 데이터가 GPU에 도착했으면, "이걸 어떻게 처리할지" 알려줘야 한다. HLSL이라는 GPU 전용 언어로.</p>
+    </div>
+
+    <!-- InputLayout -->
+    <h2 id="inputlayout">CPU ↔ GPU 사이의 약속 — InputLayout</h2>
+    <p>GPU는 C++ 구조체를 모르니까 "이 바이트 덩어리를 어떻게 해석할지" 알려줘야 해.</p>
+
+    <div class="type-table-wrap fade-in">
+      <table class="type-table">
+        <thead><tr><th>CPU (FVertexColor)</th><th>InputLayout</th><th>HLSL (VS_Input_Color)</th></tr></thead>
+        <tbody>
+          <tr><td class="t-name">_pos (FVector3D, 12B)</td><td class="t-real">POSITION, R32G32B32_FLOAT, offset=0</td><td class="t-name">float3 Pos : POSITION</td></tr>
+          <tr><td class="t-name">_color (FVector4D, 16B)</td><td class="t-real">COLOR, R32G32B32A32_FLOAT, offset=12</td><td class="t-name">float4 Color : Color</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p><strong>Semantic</strong> = HLSL에서 데이터를 식별하는 이름. CPU 구조체 멤버와 HLSL semantic이 InputLayout을 통해 매칭됨.</p>
+
+    <!-- InputLayout 3열 매핑 시각화 -->
+    <div class="mem-scene fade-in">
+      <div class="mem-scene-title">CPU → InputLayout → HLSL 매핑</div>
+      <div style="display:flex;gap:8px;align-items:stretch;flex-wrap:wrap">
+        <!-- CPU -->
+        <div style="flex:1;min-width:120px">
+          <div style="font-family:var(--font-heading);font-size:10px;font-weight:700;color:var(--accent);margin-bottom:8px;text-transform:uppercase;letter-spacing:1px">C++ (CPU)</div>
+          <div class="mem-cell used" style="min-width:100%;height:auto;padding:10px;margin-bottom:6px;flex-direction:column;align-items:flex-start">
+            <span style="font-weight:600;color:var(--accent)">_pos</span>
+            <span style="font-size:9px;color:var(--text-muted)">FVector3D — 12B</span>
+          </div>
+          <div class="mem-cell rent" style="min-width:100%;height:auto;padding:10px;flex-direction:column;align-items:flex-start">
+            <span style="font-weight:600;color:var(--accent-green)">_color</span>
+            <span style="font-size:9px;color:var(--text-muted)">FVector4D — 16B</span>
+          </div>
+        </div>
+
+        <!-- Arrows -->
+        <div style="display:flex;flex-direction:column;justify-content:center;gap:30px;padding:0 4px">
+          <span style="color:var(--text-muted);font-size:16px">→</span>
+          <span style="color:var(--text-muted);font-size:16px">→</span>
+        </div>
+
+        <!-- InputLayout -->
+        <div style="flex:1;min-width:140px">
+          <div style="font-family:var(--font-heading);font-size:10px;font-weight:700;color:var(--accent-orange);margin-bottom:8px;text-transform:uppercase;letter-spacing:1px">InputLayout</div>
+          <div style="background:var(--bg-surface);border:1px solid var(--accent-orange);border-left:3px solid var(--accent-orange);border-radius:6px;padding:10px;margin-bottom:6px;font-family:var(--font-code);font-size:10px;color:var(--text-secondary)">
+            <strong style="color:var(--accent-orange)">POSITION</strong><br>
+            R32G32B32_FLOAT<br>
+            offset = 0
+          </div>
+          <div style="background:var(--bg-surface);border:1px solid var(--accent-orange);border-left:3px solid var(--accent-orange);border-radius:6px;padding:10px;font-family:var(--font-code);font-size:10px;color:var(--text-secondary)">
+            <strong style="color:var(--accent-orange)">COLOR</strong><br>
+            R32G32B32A32_FLOAT<br>
+            offset = 12
+          </div>
+        </div>
+
+        <!-- Arrows -->
+        <div style="display:flex;flex-direction:column;justify-content:center;gap:30px;padding:0 4px">
+          <span style="color:var(--text-muted);font-size:16px">→</span>
+          <span style="color:var(--text-muted);font-size:16px">→</span>
+        </div>
+
+        <!-- HLSL -->
+        <div style="flex:1;min-width:140px">
+          <div style="font-family:var(--font-heading);font-size:10px;font-weight:700;color:var(--accent-purple);margin-bottom:8px;text-transform:uppercase;letter-spacing:1px">HLSL (GPU)</div>
+          <div class="mem-cell" style="min-width:100%;height:auto;padding:10px;margin-bottom:6px;flex-direction:column;align-items:flex-start;border-color:var(--accent-purple);background:#bc8cff08">
+            <span style="font-weight:600;color:var(--accent-purple)">float3 Pos</span>
+            <span style="font-size:9px;color:var(--text-muted)">: POSITION</span>
+          </div>
+          <div class="mem-cell" style="min-width:100%;height:auto;padding:10px;flex-direction:column;align-items:flex-start;border-color:var(--accent-purple);background:#bc8cff08">
+            <span style="font-weight:600;color:var(--accent-purple)">float4 Color</span>
+            <span style="font-size:9px;color:var(--text-muted)">: Color</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- AddInputLayoutDesc -->
+    <h2 id="adddesc">AddInputLayoutDesc — 설명서 한 줄 추가</h2>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> InputLayout 요소 추가 <span class="filename">Shader/GraphicShader.cpp</span></div>
+<pre><span class="tp">void</span> <span class="tp">GraphicShader</span>::<span class="fn">AddInputLayoutDesc</span>(<span class="kw">const</span> <span class="tp">char</span>* semetic, <span class="tp">uint32</span> sementicIndex,
+    <span class="tp">DXGI_FORMAT</span> fmt, <span class="tp">uint32</span> inputSlot, <span class="tp">uint32</span> size,
+    <span class="tp">D3D11_INPUT_CLASSIFICATION</span> inputSlotClass, <span class="tp">uint32</span> instanceDataStepRate)
+{
+    <span class="tp">D3D11_INPUT_ELEMENT_DESC</span> desc = {};
+
+    desc.SemanticName = semetic;                 <span class="cm">// HLSL 시멘틱 이름</span>
+    desc.SemanticIndex = sementicIndex;          <span class="cm">// 같은 이름 여러 개일 때 인덱스</span>
+    desc.Format = fmt;                           <span class="cm">// 데이터 포맷</span>
+    desc.InputSlot = inputSlot;                  <span class="cm">// 어떤 버텍스 버퍼에서 오는지</span>
+    desc.InputSlotClass = inputSlotClass;        <span class="cm">// 정점 단위 / 인스턴스 단위</span>
+    desc.InstanceDataStepRate = instanceDataStepRate;
+    desc.AlignedByteOffset = _inputLayoutSize;   <span class="cm">// 정점 시작부터 이 데이터까지의 거리</span>
+
+    _inputLayoutSize += size;
+
+    _descs.<span class="fn">push_back</span>(desc);
+}</pre>
+    </div>
+
+    <p><code>AlignedByteOffset</code> 자동 계산 — POSITION 추가하면 offset=0, COLOR 추가하면 offset=12.</p>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> GPU에 설명서 등록 <span class="filename">Shader/GraphicShader.cpp</span></div>
+<pre><span class="tp">bool</span> <span class="tp">GraphicShader</span>::<span class="fn">CreateInputLayout</span>()
+{
+    <span class="kw">if</span> (<span class="fn">FAILED</span>(<span class="tp">Device</span>::<span class="fn">Instance</span>().<span class="fn">GetDevice</span>()-&gt;<span class="fn">CreateInputLayout</span>(
+        &amp;_descs[<span class="num">0</span>], (<span class="tp">UINT</span>)_descs.<span class="fn">size</span>(),
+        _vsBlob-&gt;<span class="fn">GetBufferPointer</span>(), _vsBlob-&gt;<span class="fn">GetBufferSize</span>(),
+        &amp;_inputLayout)))
+        <span class="kw">return</span> <span class="kw">false</span>;
+
+    <span class="kw">return</span> <span class="kw">true</span>;
+}</pre>
+    </div>
+
+    <div class="info-box">
+      <div class="info-label">VS 바이트코드가 필요한 이유</div>
+      GPU가 "이 InputLayout이 이 VS와 호환되는지" 검증하니까. 컴파일된 <code>_vsBlob</code>의 입력 시그니처와 대조함.
+    </div>
+
+    <!-- LoadShader -->
+    <h2 id="loadshader">LoadVertexShader — HLSL 로드 + 컴파일</h2>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> VS 로드/컴파일 <span class="filename">Shader/GraphicShader.cpp</span></div>
+<pre><span class="tp">bool</span> <span class="tp">GraphicShader</span>::<span class="fn">LoadVertexShader</span>(<span class="kw">const</span> <span class="tp">char</span>* entryName, <span class="kw">const</span> <span class="tp">char</span>* fileName)
+{
+    <span class="kw">auto</span> hlslPath = <span class="tp">DirectoryManager</span>::<span class="fn">Instance</span>().<span class="fn">GetPath</span>(<span class="str">"HLSL"</span>);
+    <span class="kw">if</span> (!hlslPath.<span class="fn">has_value</span>())
+        <span class="kw">return</span> <span class="kw">false</span>;
+
+    <span class="tp">std::filesystem::path</span> fullPath;
+    <span class="kw">if</span> (!<span class="tp">DirectoryManager</span>::<span class="fn">Instance</span>().<span class="fn">GetFile</span>(hlslPath.<span class="fn">value</span>(), fileName, <span class="mc">OUT</span> fullPath))
+        <span class="kw">return</span> <span class="kw">false</span>;
+
+    <span class="tp">uint32</span> flag = <span class="num">0</span>;
+<span class="pp">#ifdef _DEBUG</span>
+    flag = <span class="mc">D3DCOMPILE_DEBUG</span>;
+<span class="pp">#endif</span>
+
+    <span class="tp">ID3D10Blob</span>* errorBlob = <span class="kw">nullptr</span>;
+
+    <span class="kw">if</span> (<span class="fn">FAILED</span>(<span class="fn">D3DCompileFromFile</span>(fullPath.<span class="fn">c_str</span>(), <span class="kw">nullptr</span>, <span class="mc">D3D_COMPILE_STANDARD_FILE_INCLUDE</span>,
+        entryName, <span class="str">"vs_5_0"</span>, flag, <span class="num">0</span>, _vsBlob.<span class="fn">GetAddressOf</span>(), &amp;errorBlob)))
+    {
+<span class="pp">#ifdef _DEBUG</span>
+        <span class="tp">char</span> errorText[<span class="num">255</span>] = {};
+        <span class="fn">strcpy_s</span>(errorText, (<span class="kw">const</span> <span class="tp">char</span>*)errorBlob-&gt;<span class="fn">GetBufferPointer</span>());
+        <span class="tp">LogManager</span>::<span class="fn">Instance</span>().<span class="fn">Debug</span>(errorText);
+<span class="pp">#endif</span>
+        <span class="kw">return</span> <span class="kw">false</span>;
+    }
+
+    <span class="kw">if</span> (<span class="fn">FAILED</span>(<span class="tp">Device</span>::<span class="fn">Instance</span>().<span class="fn">GetDevice</span>()-&gt;<span class="fn">CreateVertexShader</span>(
+        _vsBlob-&gt;<span class="fn">GetBufferPointer</span>(), _vsBlob-&gt;<span class="fn">GetBufferSize</span>(),
+        <span class="kw">nullptr</span>, _vs.<span class="fn">GetAddressOf</span>())))
+    {
+        <span class="tp">LogManager</span>::<span class="fn">Instance</span>().<span class="fn">Debug</span>(<span class="mc">__FILE__</span>, <span class="mc">__LINE__</span>, <span class="str">"[CreateVertexShader Error]"</span>);
+        <span class="kw">return</span> <span class="kw">false</span>;
+    }
+
+    <span class="kw">return</span> <span class="kw">true</span>;
+}</pre>
+    </div>
+
+    <div class="mem-steps fade-in">
+      <div class="mem-step"><div class="mem-step-num">1</div><div class="mem-step-text"><code>"ColorMesh.fx"</code> 파일 경로 찾기 (DirectoryManager)</div></div>
+      <div class="mem-step"><div class="mem-step-num">2</div><div class="mem-step-text"><code>D3DCompileFromFile</code> → HLSL 소스를 <code>vs_5_0</code> 바이트코드로 컴파일</div></div>
+      <div class="mem-step"><div class="mem-step-num">3</div><div class="mem-step-text"><code>CreateVertexShader</code> → 바이트코드로 GPU 셰이더 객체 생성</div></div>
+    </div>
+
+    <p>LoadPixelShader도 동일 패턴. <code>"ps_5_0"</code>으로 컴파일 + <code>CreatePixelShader</code>.</p>
+
+    <!-- HLSL 해부 -->
+    <h2 id="hlsl">HLSL 코드 해부 — ColorMesh.fx</h2>
+
+    <h3>Share.fx — 공용 출력 구조체</h3>
+    <div class="code-block">
+      <div class="code-header"><span class="lang">HLSL</span> <span class="filename">HLSL/Share.fx</span></div>
+<pre><span class="kw">struct</span> <span class="tp">PS_Output_Single</span>
+{
+    <span class="cm">//SV_TARGET : 시스템 시멘틱 — 렌더 타겟에 출력</span>
+    <span class="tp">float4</span> Color : <span class="mc">SV_TARGET</span>;
+};</pre>
+    </div>
+
+    <h3>VS 입력/출력 구조체</h3>
+    <div class="code-block">
+      <div class="code-header"><span class="lang">HLSL</span> <span class="filename">HLSL/ColorMesh.fx</span></div>
+<pre><span class="kw">struct</span> <span class="tp">VS_Input_Color</span>
+{
+    <span class="tp">float3</span> Pos : <span class="mc">POSITION</span>;     <span class="cm">//CPU 버퍼에서 이 부분은 위치정보</span>
+    <span class="tp">float4</span> Color : <span class="mc">Color</span>;      <span class="cm">//CPU 버퍼에서 이 부분은 색상 정보</span>
+};
+
+<span class="kw">struct</span> <span class="tp">VS_Output_Color</span>
+{
+    <span class="tp">float4</span> Pos : <span class="mc">SV_POSITION</span>;   <span class="cm">// 시스템 시멘틱 — 래스터화에 사용</span>
+    <span class="tp">float4</span> Color : <span class="mc">COLOR</span>;       <span class="cm">// 래스터라이저가 보간 → PS에 전달</span>
+};</pre>
+    </div>
+
+    <h3>Vertex Shader — 패스스루</h3>
+    <div class="code-block">
+      <div class="code-header"><span class="lang">HLSL</span> <span class="filename">HLSL/ColorMesh.fx</span></div>
+<pre><span class="cm">//버텍스 쉐이더</span>
+<span class="tp">VS_Output_Color</span> <span class="fn">ColorMeshVS</span>(<span class="tp">VS_Input_Color</span> input)
+{
+    <span class="tp">VS_Output_Color</span> output = (<span class="tp">VS_Output_Color</span>) <span class="num">0</span>;
+
+    <span class="cm">//output.Pos의 x, y, z에는 input.Pos의 x, y, z가 들어가고, w에는 1이 들어간다.</span>
+    output.Pos = <span class="fn">float4</span>(input.Pos, <span class="num">1.f</span>);
+    output.Color = input.Color;
+
+    <span class="kw">return</span> output;
+}</pre>
+    </div>
+    <p>현재 <strong>변환 없이 패스스루</strong>. 나중에 월드/뷰/프로젝션 행렬 곱이 여기 들어올 거야.</p>
+    <p><code>float4(input.Pos, 1.f)</code> — 3D(x,y,z) → 4D 동차좌표(x,y,z,w). w=1은 "위치"를 의미.</p>
+
+    <!-- VS 입력→처리→출력 시각화 -->
+    <div class="mem-scene fade-in">
+      <div class="mem-scene-title">ColorMeshVS — 입력 → 처리 → 출력</div>
+      <div style="display:flex;gap:8px;align-items:stretch;flex-wrap:wrap">
+        <!-- Input -->
+        <div style="flex:1;min-width:110px">
+          <div style="font-family:var(--font-heading);font-size:10px;font-weight:700;color:var(--accent);margin-bottom:8px;text-transform:uppercase;letter-spacing:1px">VS 입력</div>
+          <div class="mem-cell used" style="min-width:100%;height:auto;padding:10px;margin-bottom:6px;flex-direction:column;align-items:flex-start">
+            <span style="font-weight:600;font-size:11px">float3 Pos</span>
+            <span style="font-size:9px;color:var(--text-muted)">: POSITION</span>
+          </div>
+          <div class="mem-cell used" style="min-width:100%;height:auto;padding:10px;flex-direction:column;align-items:flex-start">
+            <span style="font-weight:600;font-size:11px">float4 Color</span>
+            <span style="font-size:9px;color:var(--text-muted)">: COLOR</span>
+          </div>
+        </div>
+
+        <!-- Arrow + Processing -->
+        <div style="display:flex;flex-direction:column;justify-content:center;align-items:center;gap:4px;padding:0 6px;min-width:120px">
+          <span style="color:var(--text-muted);font-size:16px">→</span>
+          <div style="background:var(--bg-surface);border:1px solid var(--accent-orange);border-radius:6px;padding:8px 12px;text-align:center">
+            <div style="font-family:var(--font-code);font-size:10px;color:var(--accent-orange);font-weight:600">ColorMeshVS</div>
+            <div style="font-family:var(--font-code);font-size:9px;color:var(--text-muted);margin-top:4px">float4(Pos, 1.f)<br>Color = Color</div>
+          </div>
+          <span style="color:var(--text-muted);font-size:16px">→</span>
+        </div>
+
+        <!-- Output -->
+        <div style="flex:1;min-width:110px">
+          <div style="font-family:var(--font-heading);font-size:10px;font-weight:700;color:var(--accent-green);margin-bottom:8px;text-transform:uppercase;letter-spacing:1px">VS 출력</div>
+          <div class="mem-cell rent" style="min-width:100%;height:auto;padding:10px;margin-bottom:6px;flex-direction:column;align-items:flex-start">
+            <span style="font-weight:600;font-size:11px">float4 Pos</span>
+            <span style="font-size:9px;color:var(--text-muted)">: SV_POSITION</span>
+          </div>
+          <div class="mem-cell rent" style="min-width:100%;height:auto;padding:10px;flex-direction:column;align-items:flex-start">
+            <span style="font-weight:600;font-size:11px">float4 Color</span>
+            <span style="font-size:9px;color:var(--text-muted)">: COLOR → 래스터라이저 보간</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <h3>Pixel Shader — 색 그대로 출력</h3>
+    <div class="code-block">
+      <div class="code-header"><span class="lang">HLSL</span> <span class="filename">HLSL/ColorMesh.fx</span></div>
+<pre><span class="cm">//픽셀쉐이더</span>
+<span class="tp">PS_Output_Single</span> <span class="fn">ColorMeshPS</span>(<span class="tp">VS_Output_Color</span> input)
+{
+    <span class="tp">PS_Output_Single</span> output = (<span class="tp">PS_Output_Single</span>) <span class="num">0</span>;
+
+    output.Color = input.Color;
+
+    <span class="kw">return</span> output;
+}</pre>
+    </div>
+    <p>VS에서 넘어온 Color를 <code>SV_TARGET</code>에 출력. 래스터라이저가 꼭짓점 사이를 <strong>보간</strong>해주니까 삼각형 내부가 그라데이션.</p>
+
+    <!-- 시스템 시멘틱 → 파이프라인 매핑 -->
+    <div class="mem-scene fade-in">
+      <div class="mem-scene-title">시스템 시멘틱(SV_*) — 파이프라인 어디서 쓰이나?</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">
+        <div class="mem-cell free" style="min-width:50px">IA</div>
+        <div class="mem-cell free" style="min-width:50px">VS</div>
+        <div class="mem-cell used" style="min-width:50px;border-color:var(--accent)">RS</div>
+        <div class="mem-cell free" style="min-width:50px">PS</div>
+        <div class="mem-cell rent" style="min-width:50px">OM</div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px;font-size:12px">
+        <div style="display:flex;align-items:center;gap:8px">
+          <div style="font-family:var(--font-code);font-weight:600;color:var(--accent);min-width:120px">SV_POSITION</div>
+          <span style="color:var(--text-muted)">→</span>
+          <span style="color:var(--text-secondary)"><strong style="color:var(--accent)">래스터라이저(RS)</strong>가 삼각형→픽셀 변환에 사용</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <div style="font-family:var(--font-code);font-weight:600;color:var(--accent-green);min-width:120px">SV_TARGET</div>
+          <span style="color:var(--text-muted)">→</span>
+          <span style="color:var(--text-secondary)"><strong style="color:var(--accent-green)">Output Merger(OM)</strong>가 RenderTargetView에 기록</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <div style="font-family:var(--font-code);font-weight:600;color:var(--text-muted);min-width:120px">COLOR</div>
+          <span style="color:var(--text-muted)">→</span>
+          <span style="color:var(--text-secondary)">시스템 시멘틱 아님. <strong>사용자 정의</strong> — RS가 보간, PS가 읽음</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- SetShader -->
+    <h2 id="setshader">SetShader — 매 프레임 바인딩</h2>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> VS→PS→InputLayout 바인딩 <span class="filename">Shader/GraphicShader.cpp</span></div>
+<pre><span class="tp">void</span> <span class="tp">GraphicShader</span>::<span class="fn">SetShader</span>()
+{
+    <span class="tp">Device</span>::<span class="fn">Instance</span>().<span class="fn">GetContext</span>()-&gt;<span class="fn">VSSetShader</span>(_vs.<span class="fn">Get</span>(), <span class="kw">nullptr</span>, <span class="num">0</span>);
+    <span class="tp">Device</span>::<span class="fn">Instance</span>().<span class="fn">GetContext</span>()-&gt;<span class="fn">PSSetShader</span>(_ps.<span class="fn">Get</span>(), <span class="kw">nullptr</span>, <span class="num">0</span>);
+
+    <span class="tp">Device</span>::<span class="fn">Instance</span>().<span class="fn">GetContext</span>()-&gt;<span class="fn">IASetInputLayout</span>(_inputLayout.<span class="fn">Get</span>());
+}</pre>
+    </div>
+    <p>헤더에서 <code>virtual void SetShader() final;</code> — 자식 클래스가 <strong>재정의 불가</strong>.</p>
+
+    <!-- ColorMeshShader::Init -->
+    <h2 id="colormesh">ColorMeshShader::Init() — 전부 조립</h2>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> 4단계 조립 <span class="filename">Shader/ColorMeshShader.cpp</span></div>
+<pre><span class="tp">bool</span> <span class="tp">ColorMeshShader</span>::<span class="fn">Init</span>()
+{
+    <span class="kw">if</span> (!<span class="fn">LoadVertexShader</span>(<span class="str">"ColorMeshVS"</span>, <span class="str">"ColorMesh.fx"</span>))
+        <span class="kw">return</span> <span class="kw">false</span>;
+
+    <span class="kw">if</span> (!<span class="fn">LoadPixelShader</span>(<span class="str">"ColorMeshPS"</span>, <span class="str">"ColorMesh.fx"</span>))
+        <span class="kw">return</span> <span class="kw">false</span>;
+
+    <span class="fn">AddInputLayoutDesc</span>(<span class="str">"POSITION"</span>, <span class="num">0</span>, <span class="mc">DXGI_FORMAT_R32G32B32_FLOAT</span>, <span class="num">0</span>, <span class="num">12</span>, <span class="mc">D3D11_INPUT_PER_VERTEX_DATA</span>, <span class="num">0</span>);
+    <span class="fn">AddInputLayoutDesc</span>(<span class="str">"COLOR"</span>, <span class="num">0</span>, <span class="mc">DXGI_FORMAT_R32G32B32A32_FLOAT</span>, <span class="num">0</span>, <span class="num">16</span>, <span class="mc">D3D11_INPUT_PER_VERTEX_DATA</span>, <span class="num">0</span>);
+
+    <span class="kw">if</span> (!<span class="fn">CreateInputLayout</span>())
+        <span class="kw">return</span> <span class="kw">false</span>;
+
+    <span class="kw">return</span> <span class="kw">true</span>;
+}</pre>
+    </div>
+
+    <div class="mem-steps fade-in">
+      <div class="mem-step"><div class="mem-step-num">1</div><div class="mem-step-text">VS 로드+컴파일 (<code>"ColorMeshVS"</code> in <code>"ColorMesh.fx"</code>)</div></div>
+      <div class="mem-step"><div class="mem-step-num">2</div><div class="mem-step-text">PS 로드+컴파일 (<code>"ColorMeshPS"</code>)</div></div>
+      <div class="mem-step"><div class="mem-step-num">3</div><div class="mem-step-text">InputLayout 정의 (POSITION 12B + COLOR 16B)</div></div>
+      <div class="mem-step"><div class="mem-step-num">4</div><div class="mem-step-text">InputLayout 생성 (VS 바이트코드로 검증)</div></div>
+    </div>
+
+    <!-- 데이터 흐름 -->
+    <h2 id="dataflow">데이터 흐름: CPU 정점 → HLSL → 화면</h2>
+
+    <div class="flow-diagram fade-in"><span class="flow-fn">FVertexColor._pos</span> (12B)  ──InputLayout──→  <span class="flow-highlight">float3 Pos : POSITION</span>
+<span class="flow-fn">FVertexColor._color</span> (16B) ──InputLayout──→  <span class="flow-highlight">float4 Color : Color</span>
+                                                    <span class="flow-arrow">│</span>
+                                         <span class="flow-fn">ColorMeshVS</span> (Vertex Shader)
+                                         float4(Pos, 1.f) → <span class="flow-highlight">SV_POSITION</span>
+                                         Color → COLOR (그대로)
+                                                    <span class="flow-arrow">│</span>
+                                            래스터라이저 (보간)
+                                                    <span class="flow-arrow">│</span>
+                                         <span class="flow-fn">ColorMeshPS</span> (Pixel Shader)
+                                         input.Color → <span class="flow-highlight">SV_TARGET</span>
+                                                    <span class="flow-arrow">│</span>
+                                              Output Merger
+                                         RenderTargetView에 기록</div>
+
+    <div class="page-nav" id="page-nav"></div>
+
+  <script>
+  var PAGE_ID = "0006_03";
+  var ON_THIS_PAGE = [
+    { id: "inputlayout", label: "InputLayout — CPU↔GPU 약속" },
+    { id: "adddesc", label: "AddInputLayoutDesc" },
+    { id: "loadshader", label: "LoadVertexShader" },
+    { id: "hlsl", label: "HLSL 코드 해부" },
+    { id: "setshader", label: "SetShader" },
+    { id: "colormesh", label: "ColorMeshShader::Init" },
+    { id: "dataflow", label: "데이터 흐름" },
+  ];
+  </script>
+  <script src="nav.js"></script>
+  </main>
+</body>
+</html>

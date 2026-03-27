@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Day04 — GameEngine 프레임워크 | DX11 노트</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <header class="header">
+    <button class="hamburger" id="hamburger" aria-label="메뉴 열기">
+      <span></span><span></span><span></span>
+    </button>
+    <div class="header-logo">
+      <a href="index.html" style="color:inherit;text-decoration:none">DX11 NOTE</a>
+      <span class="subtitle">Day 04</span>
+    </div>
+    <button class="theme-toggle" id="themeToggle" aria-label="테마 전환">
+      <span class="theme-toggle-icon"></span>
+    </button>
+  </header>
+
+  <div class="sidebar-overlay" id="sidebarOverlay"></div>
+  <nav class="sidebar" id="sidebar"></nav>
+
+  <main class="main-content content">
+    <div class="page-title fade-in">
+      <span class="tag tag-day">DAY 04</span>
+      <h1>GameEngine<br>프레임워크 전체 개요</h1>
+      <p class="page-desc">Client.cpp의 200줄이 2줄이 됐다. Init/Run/Logic/Tick 구조, InitManager 순서, WndProc가 static인 이유.</p>
+    </div>
+
+    <!-- 변경 파일 -->
+    <h2 id="files">변경된 파일</h2>
+    <div class="file-grid fade-in fade-in-d1">
+      <div class="file-card"><div class="file-icon h">h</div><div><div class="file-name">Core/GameEngine.h</div><div class="file-role">신규 — 엔진 진입점</div></div></div>
+      <div class="file-card"><div class="file-icon cpp">cpp</div><div><div class="file-name">Core/GameEngine.cpp</div><div class="file-role">신규 — Init/Run/Logic/Tick</div></div></div>
+      <div class="file-card"><div class="file-icon h">h</div><div><div class="file-name">Core/TimeManager.h</div><div class="file-role">신규 — deltaTime 측정</div></div></div>
+      <div class="file-card"><div class="file-icon h">h</div><div><div class="file-name">Core/DirectoryManager.h</div><div class="file-role">신규 — 경로 관리</div></div></div>
+      <div class="file-card"><div class="file-icon h">h</div><div><div class="file-name">Core/Logger.h</div><div class="file-role">신규 — 로그 작성 (폴드 표현식)</div></div></div>
+      <div class="file-card"><div class="file-icon h">h</div><div><div class="file-name">Common/LogManager.h</div><div class="file-role">신규 — 로그 파일 관리</div></div></div>
+      <div class="file-card"><div class="file-icon h">h</div><div><div class="file-name">Common/Singleton.h</div><div class="file-role">수정 — Init() 제거</div></div></div>
+      <div class="file-card"><div class="file-icon h">h</div><div><div class="file-name">Core/ObjectPool.h/cpp</div><div class="file-role">수정 — Init() → bool Init()</div></div></div>
+      <div class="file-card"><div class="file-icon h">h</div><div><div class="file-name">Core/MemoryPool.h/cpp</div><div class="file-role">수정 — Init() → bool Init()</div></div></div>
+      <div class="file-card"><div class="file-icon cpp">cpp</div><div><div class="file-name">Client.cpp</div><div class="file-role">수정 — GameEngine 2줄로 교체</div></div></div>
+      <div class="file-card"><div class="file-icon rc">vcx</div><div><div class="file-name">Client.vcxproj/filters</div><div class="file-role">수정 — 새 파일 등록</div></div></div>
+    </div>
+
+    <!-- 큰 그림 -->
+    <h2 id="bigpicture">큰 그림: Client.cpp가 2줄이 됐다</h2>
+
+    <div class="compare-grid">
+      <div class="compare-item bad">
+        <div class="compare-label">이전 (v3) — 200줄+</div>
+        <div style="font-family:var(--font-code);font-size:11px;line-height:1.7;color:var(--text-secondary)">
+          LoadStringW(...);<br>
+          MyRegisterClass(hInstance);<br>
+          InitInstance(hInstance, nCmdShow);<br>
+          while (true) {<br>
+          &nbsp;&nbsp;PeekMessage(...)<br>
+          &nbsp;&nbsp;else { /* Logic */ }<br>
+          }<br>
+          + WndProc, About 함수...
+        </div>
+      </div>
+      <div class="compare-item good">
+        <div class="compare-label">현재 (v4) — 2줄</div>
+        <div class="code-block" style="margin-bottom:0">
+          <div class="code-header"><span class="lang">C++</span> <span class="filename">Client.cpp</span></div>
+<pre><span class="tp">GameEngine</span>::<span class="fn">Instance</span>().<span class="fn">Init</span>(hInstance, <span class="str">L"ProjectK6"</span>);
+<span class="tp">GameEngine</span>::<span class="fn">Instance</span>().<span class="fn">Destroy</span>();
+<span class="kw">return</span> <span class="mc">TRUE</span>;</pre>
+        </div>
+      </div>
+    </div>
+
+    <!-- GameEngine 구조 -->
+    <h2 id="structure">GameEngine 클래스 구조</h2>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> GameEngine 선언 <span class="filename">Core/GameEngine.h</span></div>
+<pre><span class="kw">class</span> <span class="tp">GameEngine</span> : <span class="kw">public</span> <span class="tp">Singleton</span>&lt;<span class="tp">GameEngine</span>&gt;
+{
+    <span class="kw">friend</span> <span class="tp">Singleton</span>&lt;<span class="tp">GameEngine</span>&gt;;
+
+<span class="kw">protected</span>:
+    <span class="fn">GameEngine</span>() = <span class="kw">default</span>;
+    ~<span class="fn">GameEngine</span>() = <span class="kw">default</span>;
+    <span class="fn">GameEngine</span>(<span class="kw">const</span> <span class="tp">GameEngine</span>&amp;) = <span class="kw">delete</span>;
+    <span class="fn">GameEngine</span>(<span class="tp">GameEngine</span>&amp;&amp;) = <span class="kw">delete</span>;
+    <span class="tp">GameEngine</span>&amp; <span class="kw">operator</span>=(<span class="kw">const</span> <span class="tp">GameEngine</span>&amp;) = <span class="kw">delete</span>;
+    <span class="tp">GameEngine</span>&amp; <span class="kw">operator</span>=(<span class="tp">GameEngine</span>&amp;&amp;) = <span class="kw">delete</span>;
+
+<span class="kw">private</span>:
+    <span class="tp">HINSTANCE</span> _hInst = <span class="kw">nullptr</span>;  <span class="cm">// 운영체제가 발급해주는 ID</span>
+    <span class="tp">HWND</span> _hWnd = <span class="kw">nullptr</span>;        <span class="cm">// 창마다 생기는 핸들</span>
+    <span class="tp">HDC</span>  _hdc = <span class="kw">nullptr</span>;         <span class="cm">// 그리기 위한 핸들</span>
+    <span class="tp">TCHAR</span> _className[<span class="num">256</span>] = {};
+    <span class="tp">TCHAR</span> _titleName[<span class="num">256</span>] = {};
+    <span class="tp">float</span> _clearColor[<span class="num">4</span>] = { <span class="num">255</span>, <span class="num">255</span>, <span class="num">255</span>, <span class="num">255</span> };
+
+    <span class="kw">static</span> <span class="tp">bool</span> _bIsRun;
+
+<span class="kw">public</span>:
+    <span class="kw">virtual</span> <span class="tp">void</span> <span class="fn">Destroy</span>() <span class="kw">override</span>;
+    <span class="tp">bool</span> <span class="fn">Init</span>(<span class="tp">HINSTANCE</span> inst, <span class="kw">const</span> <span class="tp">wchar_t</span>* name);
+    <span class="tp">int</span> <span class="fn">Run</span>();
+
+    <span class="tp">HDC</span> <span class="fn">GetHDC</span>() <span class="kw">const</span> { <span class="kw">return</span> _hdc; }
+    <span class="tp">HINSTANCE</span> <span class="fn">GetHINSTANCE</span>() <span class="kw">const</span> { <span class="kw">return</span> _hInst; }
+    <span class="tp">HWND</span> <span class="fn">GetHWND</span>() <span class="kw">const</span> { <span class="kw">return</span> _hWnd; }
+
+<span class="kw">private</span>:
+    <span class="tp">bool</span> <span class="fn">Create</span>();
+    <span class="tp">void</span> <span class="fn">RegisterWindowClass</span>();
+    <span class="tp">void</span> <span class="fn">Logic</span>();
+    <span class="tp">void</span> <span class="fn">Tick</span>(<span class="tp">float</span> deltaTime);
+    <span class="tp">bool</span> <span class="fn">InitManager</span>();
+
+    <span class="kw">static</span> <span class="tp">LRESULT</span> <span class="mc">CALLBACK</span> <span class="fn">WndProc</span>(<span class="tp">HWND</span> hWnd, <span class="tp">UINT</span> message, <span class="tp">WPARAM</span> wParam, <span class="tp">LPARAM</span> lParam);
+};</pre>
+    </div>
+
+    <!-- 흐름도 -->
+    <h3>Init → Run → Logic → Tick 흐름</h3>
+    <div class="flow-diagram fade-in"><span class="flow-fn">GameEngine::Init</span>(hInstance, <span class="flow-highlight">"ProjectK6"</span>)
+  <span class="flow-arrow">│</span>
+  <span class="flow-arrow">├─</span> _hInst = inst
+  <span class="flow-arrow">├─</span> <span class="flow-fn">lstrcpy</span>(_className, name) / <span class="flow-fn">lstrcpy</span>(_titleName, name)
+  <span class="flow-arrow">├─</span> <span class="flow-fn">RegisterWindowClass</span>()
+  <span class="flow-arrow">├─</span> <span class="flow-fn">Create</span>()
+  <span class="flow-arrow">│</span>   <span class="flow-arrow">├─</span> <span class="flow-fn">CreateWindowW</span>() → <span class="flow-highlight">if (!_hWnd) return false;</span>
+  <span class="flow-arrow">│</span>   <span class="flow-arrow">└─</span> <span class="flow-fn">AdjustWindowRect</span>() <span class="flow-desc">← 1280x720 클라이언트 영역</span>
+  <span class="flow-arrow">├─</span> _hdc = <span class="flow-fn">GetDC</span>(_hWnd)
+  <span class="flow-arrow">├─</span> _bIsRun = <span class="flow-fn">InitManager</span>()
+  <span class="flow-arrow">└─</span> <span class="flow-fn">Run</span>()
+       <span class="flow-arrow">│</span>
+       <span class="flow-arrow">└─</span> <span class="flow-highlight">while (_bIsRun)</span>
+            <span class="flow-arrow">├─</span> PeekMessage → <span class="flow-fn">TranslateMessage</span> → <span class="flow-fn">DispatchMessage</span> → <span class="flow-fn">WndProc</span>
+            <span class="flow-arrow">└─</span> else → <span class="flow-fn">Logic</span>()
+                         <span class="flow-arrow">└─</span> deltaTime = <span class="flow-fn">TimeManager::Tick</span>()
+                              <span class="flow-arrow">└─</span> <span class="flow-fn">Tick</span>(deltaTime)
+                                   <span class="flow-arrow">└─</span> <span class="flow-fn">LogManager::Tick</span>()</div>
+
+    <!-- 개선점 테이블 -->
+    <div class="type-table-wrap fade-in">
+      <table class="type-table">
+        <thead><tr><th>이전 (Client.cpp)</th><th>현재 (GameEngine)</th></tr></thead>
+        <tbody>
+          <tr><td class="t-desc">전역 변수 hInst, szTitle 등</td><td class="t-name">멤버 변수로 캡슐화</td></tr>
+          <tr><td class="t-desc">main에서 직접 루프</td><td class="t-name">Run() 메서드로 분리</td></tr>
+          <tr><td class="t-desc">게임 로직 자리 비어있음</td><td class="t-name">Logic() → Tick(deltaTime)</td></tr>
+          <tr><td class="t-desc">매니저 초기화 없음</td><td class="t-name">InitManager()로 순서 관리</td></tr>
+          <tr><td class="t-desc">창 크기: OS 기본값</td><td class="t-name">AdjustWindowRect 1280x720 고정</td></tr>
+          <tr><td class="t-desc">메뉴바 있음</td><td class="t-name">메뉴바 제거 (lpszMenuName = 0)</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- InitManager -->
+    <h2 id="initmanager">InitManager — 매니저 초기화 순서</h2>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> 초기화 순서 <span class="filename">Core/GameEngine.cpp</span></div>
+<pre><span class="tp">bool</span> <span class="tp">GameEngine</span>::<span class="fn">InitManager</span>()
+{
+    <span class="tp">DirectoryManager</span>::<span class="fn">Instance</span>().<span class="fn">Init</span>();   <span class="cm">// 1) 경로 먼저</span>
+    <span class="tp">LogManager</span>::<span class="fn">Instance</span>().<span class="fn">Init</span>();          <span class="cm">// 2) 로그 (경로 필요)</span>
+
+    <span class="kw">if</span> (<span class="kw">false</span> == <span class="tp">TimeManager</span>::<span class="fn">Instance</span>().<span class="fn">Init</span>())  <span class="cm">// 3) 시간</span>
+    {
+        <span class="tp">LogManager</span>::<span class="fn">Instance</span>().<span class="fn">Fatal</span>(<span class="str">"TimeManager Init Error!"</span>);
+        <span class="kw">return</span> <span class="kw">false</span>;
+    }
+
+    <span class="kw">return</span> <span class="kw">true</span>;
+}</pre>
+    </div>
+
+    <!-- 의존 순서 시각화 -->
+    <div class="mem-scene fade-in">
+      <div class="mem-scene-title">매니저 의존 순서 — 왜 이 순서인가?</div>
+      <div class="mem-steps">
+        <div class="mem-step"><div class="mem-step-num">1</div><div class="mem-step-text"><strong>DirectoryManager</strong> — LogManager가 "Logs/" 경로를 물어봐야 함</div></div>
+        <div class="mem-step"><div class="mem-step-num">2</div><div class="mem-step-text"><strong>LogManager</strong> — TimeManager 실패 시 에러 로그를 남겨야 함</div></div>
+        <div class="mem-step"><div class="mem-step-num">3</div><div class="mem-step-text"><strong>TimeManager</strong> — 실패하면 false → <code>_bIsRun = false</code> → 엔진 정지</div></div>
+      </div>
+    </div>
+
+    <!-- Singleton 변경 -->
+    <h2 id="singleton">Singleton 변경 — Init() 순수 가상 제거</h2>
+
+    <div class="compare-grid">
+      <div class="compare-item bad">
+        <div class="compare-label">이전</div>
+        <div style="font-family:var(--font-code);font-size:12px;color:var(--text-secondary)">
+          virtual void Init() = 0;<br>
+          virtual void Destroy() = 0;
+        </div>
+      </div>
+      <div class="compare-item good">
+        <div class="compare-label">현재</div>
+        <div style="font-family:var(--font-code);font-size:12px;color:var(--text-secondary)">
+          <span style="text-decoration:line-through;color:var(--accent-red)">virtual void Init() = 0;</span><br>
+          virtual void Destroy() = 0;
+        </div>
+      </div>
+    </div>
+
+    <p><code>Init()</code> 제거 이유 — 각 매니저의 시그니처가 전부 달라:</p>
+    <div class="type-table-wrap">
+      <table class="type-table">
+        <thead><tr><th>매니저</th><th>Init 시그니처</th></tr></thead>
+        <tbody>
+          <tr><td class="t-name">GameEngine</td><td class="t-real">bool Init(HINSTANCE, const wchar_t*)</td></tr>
+          <tr><td class="t-name">TimeManager</td><td class="t-real">bool Init()</td></tr>
+          <tr><td class="t-name">DirectoryManager</td><td class="t-real">void Init()</td></tr>
+          <tr><td class="t-name">LogManager</td><td class="t-real">void Init()</td></tr>
+          <tr><td class="t-name">MemoryPool</td><td class="t-real">bool Init()</td></tr>
+          <tr><td class="t-name">ObjectPool</td><td class="t-real">bool Init()</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p>순수 가상으로 강제할 수 없으니 제거. <code>Destroy()</code>는 전부 <code>void</code>+인자 없음이라 유지.</p>
+
+    <!-- WndProc static -->
+    <h2 id="wndproc">WndProc가 왜 static인가?</h2>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> static WndProc <span class="filename">Core/GameEngine.h</span></div>
+<pre><span class="kw">static</span> <span class="tp">LRESULT</span> <span class="mc">CALLBACK</span> <span class="fn">WndProc</span>(<span class="tp">HWND</span> hWnd, <span class="tp">UINT</span> message, <span class="tp">WPARAM</span> wParam, <span class="tp">LPARAM</span> lParam);</pre>
+    </div>
+
+    <div class="compare-grid">
+      <div class="compare-item bad">
+        <div class="compare-label">일반 멤버 함수라면?</div>
+        <div style="font-family:var(--font-code);font-size:11px;color:var(--text-secondary)">
+          LRESULT (<strong>GameEngine::*</strong>)(HWND, UINT, WPARAM, LPARAM)<br><br>
+          ↑ 숨겨진 this가 있어서<br>
+          OS가 기대하는 타입과 <strong>불일치!</strong>
+        </div>
+      </div>
+      <div class="compare-item good">
+        <div class="compare-label">static 멤버 함수</div>
+        <div style="font-family:var(--font-code);font-size:11px;color:var(--text-secondary)">
+          LRESULT (<strong>*</strong>)(HWND, UINT, WPARAM, LPARAM)<br><br>
+          this 없음 → 일반 함수 포인터와 <strong>호환!</strong><br>
+          <code>wcex.lpfnWndProc = WndProc;</code> OK
+        </div>
+      </div>
+    </div>
+
+    <div class="info-box">
+      <div class="info-label">_bIsRun이 static인 이유</div>
+      static WndProc에서 멤버 변수에 접근할 수 없으니, 엔진 종료 플래그 <code>_bIsRun</code>도 <strong>static</strong>으로 선언.
+      <code>WM_DESTROY</code> → <code>_bIsRun = false</code> → 게임 루프 탈출.
+    </div>
+
+    <!-- AdjustWindowRect -->
+    <h2 id="adjust">AdjustWindowRect — 1280x720 맞추기</h2>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> Create() <span class="filename">Core/GameEngine.cpp</span></div>
+<pre><span class="tp">bool</span> <span class="tp">GameEngine</span>::<span class="fn">Create</span>()
+{
+    _hWnd = <span class="fn">CreateWindowW</span>(_className, _titleName, <span class="mc">WS_OVERLAPPEDWINDOW</span>,
+        <span class="mc">CW_USEDEFAULT</span>, <span class="num">0</span>, <span class="mc">CW_USEDEFAULT</span>, <span class="num">0</span>, <span class="kw">nullptr</span>, <span class="kw">nullptr</span>, _hInst, <span class="kw">nullptr</span>);
+
+    <span class="kw">if</span> (!_hWnd)
+    {
+        <span class="kw">return</span> <span class="kw">false</span>;
+    }
+
+    <span class="tp">RECT</span> windowRect = { <span class="num">0</span>, <span class="num">0</span>, <span class="num">1280</span>, <span class="num">720</span> };
+
+    <span class="cm">// 윈도우 클라이언트 영역을 1280x720에 맞춘다</span>
+    <span class="fn">AdjustWindowRect</span>(&amp;windowRect, <span class="mc">WS_OVERLAPPEDWINDOW</span>, <span class="kw">false</span>);
+    <span class="fn">SetWindowPos</span>(_hWnd, <span class="mc">HWND_TOPMOST</span>, <span class="num">0</span>, <span class="num">0</span>,
+        windowRect.right - windowRect.left,
+        windowRect.bottom - windowRect.top,
+        <span class="mc">SWP_NOMOVE</span> | <span class="mc">SWP_NOZORDER</span>);
+
+    <span class="fn">ShowWindow</span>(_hWnd, <span class="mc">SW_SHOW</span>);
+    <span class="fn">UpdateWindow</span>(_hWnd);
+    <span class="kw">return</span> <span class="kw">true</span>;
+}</pre>
+    </div>
+
+    <div class="analogy-box">
+      <div class="analogy-header">
+        <span class="analogy-icon">🖼️</span>
+        <span class="analogy-title">ANALOGY — 액자 비유</span>
+      </div>
+      <div class="analogy-content">
+        <code>CreateWindowW(1280, 720)</code> = <strong>액자 틀 포함</strong> 1280x720. 실제 그림 공간은 더 작아.<br>
+        <code>AdjustWindowRect()</code> = "그림 공간이 정확히 1280x720이 되려면 <strong>액자가 얼마나 커야 하는지</strong>" 계산.
+      </div>
+    </div>
+
+    <!-- Destroy -->
+    <h2 id="destroy">Destroy 순서</h2>
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> Init의 역순 <span class="filename">Core/GameEngine.cpp</span></div>
+<pre><span class="tp">void</span> <span class="tp">GameEngine</span>::<span class="fn">Destroy</span>()
+{
+    <span class="tp">LogManager</span>::<span class="fn">Instance</span>().<span class="fn">Destroy</span>();
+    <span class="tp">DirectoryManager</span>::<span class="fn">Instance</span>().<span class="fn">Destroy</span>();
+}</pre>
+    </div>
+    <p>Init과 <strong>역순</strong>. LogManager가 DirectoryManager 경로를 쓰니까, LogManager를 먼저 정리.</p>
+
+    <!-- Prev / Next -->
+    <div class="page-nav" id="page-nav"></div>
+
+  <script>
+  var PAGE_ID = "0004_01";
+  var ON_THIS_PAGE = [
+    { id: "files", label: "변경 파일" },
+    { id: "bigpicture", label: "Client.cpp → 2줄" },
+    { id: "structure", label: "GameEngine 구조" },
+    { id: "initmanager", label: "InitManager 순서" },
+    { id: "singleton", label: "Singleton 변경" },
+    { id: "wndproc", label: "WndProc static" },
+    { id: "adjust", label: "AdjustWindowRect" },
+    { id: "destroy", label: "Destroy 순서" },
+  ];
+  </script>
+  <script src="nav.js"></script>
+  </main>
+</body>
+</html>

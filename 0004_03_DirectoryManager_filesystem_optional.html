@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DirectoryManager + filesystem | DX11 노트</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <header class="header">
+    <button class="hamburger" id="hamburger" aria-label="메뉴 열기">
+      <span></span><span></span><span></span>
+    </button>
+    <div class="header-logo">
+      <a href="index.html" style="color:inherit;text-decoration:none">DX11 NOTE</a>
+      <span class="subtitle">Deep Dive</span>
+    </div>
+    <button class="theme-toggle" id="themeToggle" aria-label="테마 전환">
+      <span class="theme-toggle-icon"></span>
+    </button>
+  </header>
+
+  <div class="sidebar-overlay" id="sidebarOverlay"></div>
+  <nav class="sidebar" id="sidebar"></nav>
+
+  <main class="main-content content">
+    <div class="page-title fade-in">
+      <span class="tag tag-detail">DEEP DIVE</span>
+      <h1>DirectoryManager +<br>C++17 filesystem, optional</h1>
+      <p class="page-desc">로그 파일을 어디에 저장할지? 경로를 관리하는 매니저. <code>std::filesystem</code>과 <code>std::optional</code>이 처음 등장한다.</p>
+    </div>
+
+    <!-- 전체 구조 -->
+    <h2 id="structure">DirectoryManager 전체 구조</h2>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> 클래스 선언 <span class="filename">Core/DirectoryManager.h</span></div>
+<pre><span class="kw">class</span> <span class="tp">DirectoryManager</span> : <span class="kw">public</span> <span class="tp">Singleton</span>&lt;<span class="tp">DirectoryManager</span>&gt;
+{
+    <span class="kw">friend</span> <span class="tp">Singleton</span>&lt;<span class="tp">DirectoryManager</span>&gt;;
+
+<span class="kw">private</span>:
+    <span class="tp">std::filesystem::path</span> _rootPath;        <span class="cm">// 실행 파일이 있는 경로</span>
+    <span class="tp">std::filesystem::path</span> _rootParentPath;  <span class="cm">// 루트의 부모 경로</span>
+
+    <span class="cm">// 자주 사용하는 경로들은 미리 캐싱해놓는다</span>
+    <span class="tp">std::unordered_map</span>&lt;<span class="tp">std::string</span>, <span class="tp">std::filesystem::path</span>&gt; _paths;
+
+<span class="kw">private</span>:
+    <span class="tp">void</span> <span class="fn">RegisterPath</span>(<span class="kw">const</span> <span class="tp">std::string</span>&amp; path);
+
+<span class="kw">public</span>:
+    <span class="tp">void</span> <span class="fn">Init</span>();
+    <span class="kw">virtual</span> <span class="tp">void</span> <span class="fn">Destroy</span>() <span class="kw">override</span>;
+
+    <span class="kw">const</span> <span class="tp">std::filesystem::path</span>&amp; <span class="fn">GetRootPath</span>() <span class="kw">const</span> { <span class="kw">return</span> _rootPath; }
+    <span class="tp">std::optional</span>&lt;<span class="tp">std::filesystem::path</span>&gt; <span class="fn">GetPath</span>(<span class="kw">const</span> <span class="tp">std::string</span>&amp; pathName) <span class="kw">const</span>;
+};</pre>
+    </div>
+
+    <!-- Init -->
+    <h2 id="init">Init — 루트 경로 설정</h2>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> Init() <span class="filename">Core/DirectoryManager.cpp</span></div>
+<pre><span class="tp">void</span> <span class="tp">DirectoryManager</span>::<span class="fn">Init</span>()
+{
+    <span class="cm">// 실행 파일이 있는 경로</span>
+    _rootPath = <span class="tp">std::filesystem</span>::<span class="fn">current_path</span>();
+    <span class="kw">if</span> (!<span class="tp">std::filesystem</span>::<span class="fn">exists</span>(_rootPath))       <span class="cm">//사실 굳이 필요 없긴 하다</span>
+        <span class="kw">return</span>;
+
+    <span class="kw">if</span> (!<span class="tp">std::filesystem</span>::<span class="fn">is_directory</span>(_rootPath)) <span class="cm">//사실 굳이 필요 없긴 하다.</span>
+        <span class="kw">return</span>;
+
+    <span class="cm">// 부모경로 --> 이전 경로</span>
+    _rootParentPath = _rootPath.<span class="fn">parent_path</span>();
+    <span class="kw">if</span> (!<span class="tp">std::filesystem</span>::<span class="fn">exists</span>(_rootParentPath))      <span class="cm">//사실 굳이 필요 없긴 하다.</span>
+        <span class="kw">return</span>;
+
+    <span class="kw">if</span> (!<span class="tp">std::filesystem</span>::<span class="fn">is_directory</span>(_rootParentPath)) <span class="cm">//사실 굳이 필요 없긴 하다.</span>
+        <span class="kw">return</span>;
+
+    <span class="fn">RegisterPath</span>(<span class="str">"Logs"</span>);
+}</pre>
+    </div>
+
+    <div class="info-box">
+      <div class="info-label">강사님 주석: "사실 굳이 필요 없긴 하다"</div>
+      <code>current_path()</code>는 반드시 존재하는 디렉토리를 반환하니까 exists/is_directory 체크가 불필요해. <strong>방어적 프로그래밍</strong> 차원에서 넣은 거.
+    </div>
+
+    <!-- 경로 흐름 시각화 -->
+    <div class="mem-scene fade-in">
+      <div class="mem-scene-title">Init 시 경로 구조</div>
+      <div style="font-family:var(--font-code);font-size:12px;line-height:2;color:var(--text-secondary)">
+        <div style="display:flex;align-items:center;gap:8px">
+          <div class="mem-cell used" style="min-width:200px">C:\Users\Game\Build\Bin</div>
+          <span style="color:var(--text-muted)">← _rootPath (current_path)</span>
+        </div>
+        <div class="mem-arrow-down">↑ parent_path()</div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <div class="mem-cell rent" style="min-width:200px">C:\Users\Game\Build</div>
+          <span style="color:var(--text-muted)">← _rootParentPath</span>
+        </div>
+        <div class="mem-arrow-down">↓ / "Logs"</div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <div class="mem-cell returned" style="min-width:200px">C:\Users\Game\Build\Logs</div>
+          <span style="color:var(--text-muted)">← RegisterPath("Logs")</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- filesystem::path -->
+    <h2 id="fspath">std::filesystem::path — 경로 전용 타입</h2>
+
+    <p><code>std::string</code>으로 경로를 다루면 OS마다 구분자가 달라서 (<code>\</code> vs <code>/</code>) 문제가 생겨. <code>std::filesystem::path</code>는 이걸 자동으로 처리해줘.</p>
+
+    <h3>핵심: <code>/</code> 연산자로 경로 결합</h3>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> 경로 결합</div>
+<pre><span class="tp">std::filesystem::path</span> registeredPath = _rootParentPath / path;
+
+<span class="cm">// _rootParentPath = "C:\Users\Game\Build"</span>
+<span class="cm">// path = "Logs"</span>
+<span class="cm">// 결과 = "C:\Users\Game\Build\Logs"   ← 자동으로 \ 추가!</span></pre>
+    </div>
+
+    <div class="compare-grid">
+      <div class="compare-item bad">
+        <div class="compare-label">std::string으로 하면</div>
+        <div style="font-family:var(--font-code);font-size:11px;color:var(--text-secondary)">
+          root + "\\" + path<br>
+          <span style="color:var(--accent-red)">구분자 직접 관리. Linux에서는 "/"로 바꿔야...</span>
+        </div>
+      </div>
+      <div class="compare-item good">
+        <div class="compare-label">filesystem::path</div>
+        <div style="font-family:var(--font-code);font-size:11px;color:var(--text-secondary)">
+          root / path<br>
+          <span style="color:var(--accent-green)">OS에 맞는 구분자 자동 처리!</span>
+        </div>
+      </div>
+    </div>
+
+    <h3>자주 쓰는 filesystem 함수들</h3>
+    <div class="type-table-wrap fade-in">
+      <table class="type-table">
+        <thead><tr><th>함수</th><th>하는 일</th></tr></thead>
+        <tbody>
+          <tr><td class="t-name">current_path()</td><td class="t-desc">현재 작업 디렉토리 (실행 파일 위치)</td></tr>
+          <tr><td class="t-name">exists(path)</td><td class="t-desc">경로가 존재하는지</td></tr>
+          <tr><td class="t-name">is_directory(path)</td><td class="t-desc">디렉토리인지 (파일이 아니라)</td></tr>
+          <tr><td class="t-name">create_directories(path)</td><td class="t-desc">중간 폴더까지 전부 생성 (mkdir -p)</td></tr>
+          <tr><td class="t-name">path.parent_path()</td><td class="t-desc">부모 디렉토리 경로</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- RegisterPath -->
+    <h2 id="register">RegisterPath — 경로 등록 + 자동 생성</h2>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> RegisterPath <span class="filename">Core/DirectoryManager.cpp</span></div>
+<pre><span class="tp">void</span> <span class="tp">DirectoryManager</span>::<span class="fn">RegisterPath</span>(<span class="kw">const</span> <span class="tp">std::string</span>&amp; path)
+{
+    <span class="tp">std::filesystem::path</span> registeredPath = _rootParentPath / path;
+    <span class="kw">if</span> (!<span class="tp">std::filesystem</span>::<span class="fn">exists</span>(registeredPath))
+        <span class="tp">std::filesystem</span>::<span class="fn">create_directories</span>(registeredPath);
+
+    <span class="kw">if</span> (!<span class="tp">std::filesystem</span>::<span class="fn">is_directory</span>(registeredPath))
+        <span class="kw">return</span>;
+
+    _paths[path] = registeredPath;
+}</pre>
+    </div>
+
+    <div class="mem-steps fade-in">
+      <div class="mem-step"><div class="mem-step-num">1</div><div class="mem-step-text"><code>_rootParentPath / path</code>로 전체 경로 조합</div></div>
+      <div class="mem-step"><div class="mem-step-num">2</div><div class="mem-step-text">폴더가 없으면 <code>create_directories</code>로 생성 (중간 폴더까지)</div></div>
+      <div class="mem-step"><div class="mem-step-num">3</div><div class="mem-step-text">디렉토리가 맞으면 <code>_paths</code> 맵에 캐싱</div></div>
+    </div>
+
+    <!-- optional -->
+    <h2 id="optional">std::optional — "있을 수도 있고, 없을 수도 있는 값"</h2>
+
+    <h3>왜 필요한가?</h3>
+
+    <div class="mem-compare fade-in">
+      <div class="mem-compare-col">
+        <div class="col-title">포인터로 표현</div>
+        <div style="font-family:var(--font-code);font-size:11px;color:var(--text-secondary);line-height:1.7">
+          path* Get(name);<br>
+          if (p) use(*p);<br><br>
+          <span style="color:var(--accent-red)">댕글링 위험, 소유권 불명확</span>
+        </div>
+      </div>
+      <div class="mem-compare-col">
+        <div class="col-title">bool + out 매개변수</div>
+        <div style="font-family:var(--font-code);font-size:11px;color:var(--text-secondary);line-height:1.7">
+          bool Get(name, path&amp; out);<br>
+          if (Get(n, p)) use(p);<br><br>
+          <span style="color:var(--accent-orange)">안전하지만 번거로움</span>
+        </div>
+      </div>
+      <div class="mem-compare-col">
+        <div class="col-title">std::optional (C++17)</div>
+        <div style="font-family:var(--font-code);font-size:11px;color:var(--text-secondary);line-height:1.7">
+          optional&lt;path&gt; Get(name);<br>
+          if (p) use(*p);<br><br>
+          <span style="color:var(--accent-green)">안전 + 깔끔!</span>
+        </div>
+      </div>
+    </div>
+
+    <h3>GetPath 구현</h3>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> GetPath — optional 반환 <span class="filename">Core/DirectoryManager.cpp</span></div>
+<pre><span class="tp">std::optional</span>&lt;<span class="tp">std::filesystem::path</span>&gt; <span class="tp">DirectoryManager</span>::<span class="fn">GetPath</span>(<span class="kw">const</span> <span class="tp">std::string</span>&amp; pathName) <span class="kw">const</span>
+{
+    <span class="kw">auto</span> it = _paths.<span class="fn">find</span>(pathName);
+    <span class="kw">if</span> (it == _paths.<span class="fn">end</span>())
+        <span class="kw">return</span> <span class="tp">std</span>::nullopt; <span class="cm">// 없다.</span>
+
+    <span class="kw">return</span> it-&gt;second;
+}</pre>
+    </div>
+
+    <h3>optional 사용법</h3>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> LogManager에서의 사용 패턴</div>
+<pre><span class="cm">// LogManager::OpenNewFile() 에서:</span>
+<span class="kw">auto</span> logPath = <span class="tp">DirectoryManager</span>::<span class="fn">Instance</span>().<span class="fn">GetPath</span>(<span class="str">"Logs"</span>);
+<span class="kw">if</span> (!logPath)      <span class="cm">// optional은 bool로 변환 가능 (값 있으면 true)</span>
+    <span class="kw">return</span>;
+
+<span class="cm">// 값 꺼내기 — 두 가지 방법:</span>
+*logPath           <span class="cm">// 역참조 연산자</span>
+logPath.<span class="fn">value</span>()    <span class="cm">// .value() 메서드 (없으면 예외 발생)</span></pre>
+    </div>
+
+    <!-- optional 시각화 -->
+    <div class="mem-scene fade-in">
+      <div class="mem-scene-title">optional의 두 가지 상태</div>
+      <div class="compare-grid">
+        <div class="compare-item" style="border-color:#3fb95044;text-align:center">
+          <div class="compare-label" style="color:var(--accent-green)">값이 있을 때</div>
+          <div class="mem-cell rent" style="min-width:180px;height:auto;padding:10px;margin:12px auto">
+            <span>C:\...\Build\Logs</span>
+          </div>
+          <div style="font-size:11px;color:var(--text-secondary)">
+            <code>if (logPath)</code> → <strong>true</strong><br>
+            <code>*logPath</code> → 경로 반환
+          </div>
+        </div>
+        <div class="compare-item" style="border-color:#f8514944;text-align:center">
+          <div class="compare-label" style="color:var(--accent-red)">값이 없을 때 (nullopt)</div>
+          <div class="mem-cell dead" style="min-width:180px;height:auto;padding:10px;margin:12px auto;text-decoration:none">
+            <span>std::nullopt</span>
+          </div>
+          <div style="font-size:11px;color:var(--text-secondary)">
+            <code>if (logPath)</code> → <strong>false</strong><br>
+            <code>*logPath</code> → 미정의 동작!
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Destroy -->
+    <h2 id="destroy">Destroy</h2>
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> <span class="filename">Core/DirectoryManager.cpp</span></div>
+<pre><span class="tp">void</span> <span class="tp">DirectoryManager</span>::<span class="fn">Destroy</span>()
+{
+    _paths.<span class="fn">clear</span>();
+}</pre>
+    </div>
+    <p>캐싱된 경로만 비우면 끝. 폴더 자체를 삭제하지는 않아.</p>
+
+    <!-- Prev / Next -->
+    <div class="page-nav" id="page-nav"></div>
+
+  <script>
+  var PAGE_ID = "0004_03";
+  var ON_THIS_PAGE = [
+    { id: "structure", label: "전체 구조" },
+    { id: "init", label: "Init — 루트 경로" },
+    { id: "fspath", label: "filesystem::path" },
+    { id: "register", label: "RegisterPath" },
+    { id: "optional", label: "std::optional" },
+    { id: "destroy", label: "Destroy" },
+  ];
+  </script>
+  <script src="nav.js"></script>
+  </main>
+</body>
+</html>

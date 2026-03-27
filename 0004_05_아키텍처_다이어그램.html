@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>아키텍처 다이어그램 | DX11 노트</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    /* 다이어그램 전용 스타일 */
+    .arch-tree { display:flex; flex-direction:column; gap:8px; margin:16px 0; }
+    .arch-node {
+      display:inline-flex; align-items:center; gap:8px;
+      padding:8px 14px; border-radius:6px;
+      font-family:var(--font-code); font-size:12px;
+      border:1px solid var(--border); background:var(--bg-card);
+      transition:all 0.15s;
+    }
+    .arch-node:hover { border-color:var(--border-hover); background:var(--bg-card-hover); }
+    .arch-node.primary { border-color:var(--accent); color:var(--accent); }
+    .arch-node.green { border-color:var(--accent-green); color:var(--accent-green); }
+    .arch-node.orange { border-color:var(--accent-orange); color:var(--accent-orange); }
+    .arch-node.purple { border-color:var(--accent-purple); color:var(--accent-purple); }
+    .arch-node.red { border-color:var(--accent-red); color:var(--accent-red); }
+    .arch-node .node-label { font-family:var(--font-body); font-size:11px; color:var(--text-secondary); }
+    .arch-indent { margin-left:28px; position:relative; }
+    .arch-indent::before {
+      content:''; position:absolute; left:-16px; top:0; bottom:12px;
+      width:1px; background:var(--border);
+    }
+    .arch-connector {
+      position:relative; padding-left:16px; margin:2px 0;
+      font-size:11px; color:var(--text-muted);
+    }
+    .arch-connector::before {
+      content:''; position:absolute; left:0; top:50%;
+      width:12px; height:1px; background:var(--border);
+    }
+
+    /* 시퀀스 다이어그램 */
+    .seq-row { display:flex; align-items:stretch; gap:0; margin:2px 0; }
+    .seq-actor {
+      min-width:100px; text-align:center; padding:8px 4px;
+      font-family:var(--font-code); font-size:10px; color:var(--text-secondary);
+      border-bottom:2px solid var(--border); flex-shrink:0;
+    }
+    .seq-actor.active { border-bottom-color:var(--accent); color:var(--accent); font-weight:600; }
+    .seq-msg {
+      display:flex; align-items:center; gap:6px; padding:6px 12px;
+      font-size:11px; color:var(--text-secondary);
+    }
+    .seq-arrow { color:var(--accent); font-size:14px; }
+
+    /* 폴더-클래스 매핑 */
+    .folder-map { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin:16px 0; }
+    .folder-col {
+      background:var(--bg-card); border:1px solid var(--border);
+      border-radius:var(--radius); padding:16px;
+    }
+    .folder-col .folder-name {
+      font-family:var(--font-code); font-size:13px; font-weight:600;
+      margin-bottom:10px; padding-bottom:8px; border-bottom:1px solid var(--border);
+    }
+    .folder-col .folder-item {
+      font-family:var(--font-code); font-size:11px; color:var(--text-secondary);
+      padding:3px 0;
+    }
+
+    @media (max-width:900px) {
+      .folder-map { grid-template-columns:1fr; }
+    }
+  </style>
+</head>
+<body>
+
+  <header class="header">
+    <button class="hamburger" id="hamburger" aria-label="메뉴 열기">
+      <span></span><span></span><span></span>
+    </button>
+    <div class="header-logo">
+      <a href="index.html" style="color:inherit;text-decoration:none">DX11 NOTE</a>
+      <span class="subtitle">Architecture</span>
+    </div>
+    <button class="theme-toggle" id="themeToggle" aria-label="테마 전환">
+      <span class="theme-toggle-icon"></span>
+    </button>
+  </header>
+
+  <div class="sidebar-overlay" id="sidebarOverlay"></div>
+  <nav class="sidebar" id="sidebar"></nav>
+
+  <main class="main-content content">
+    <div class="page-title fade-in">
+      <span class="tag tag-detail">ARCHITECTURE</span>
+      <h1>프로젝트 구조 +<br>아키텍처 다이어그램</h1>
+      <p class="page-desc">Day04 기준 전체 클래스 관계, 초기화/소멸 순서, 게임 루프 시퀀스, 폴더-클래스 매핑을 한눈에.</p>
+    </div>
+
+    <!-- 1. 클래스 상속 트리 -->
+    <h2 id="inheritance">클래스 상속 다이어그램</h2>
+
+    <div class="mem-scene fade-in">
+      <div class="mem-scene-title">Singleton&lt;T&gt; 상속 트리</div>
+      <div class="arch-tree">
+        <div class="arch-node purple">Singleton&lt;T&gt; <span class="node-label">— CRTP 베이스, Destroy() 순수 가상</span></div>
+        <div class="arch-indent">
+          <div class="arch-connector">상속</div>
+          <div class="arch-node primary">GameEngine <span class="node-label">— 엔진 진입점, Init/Run/Logic/Tick</span></div>
+          <div class="arch-connector">상속</div>
+          <div class="arch-node green">TimeManager <span class="node-label">— chrono deltaTime 측정</span></div>
+          <div class="arch-connector">상속</div>
+          <div class="arch-node green">DirectoryManager <span class="node-label">— filesystem 경로 관리</span></div>
+          <div class="arch-connector">상속</div>
+          <div class="arch-node green">LogManager <span class="node-label">— 로그 파일 관리 + 로테이션</span></div>
+          <div class="arch-connector">상속 (사용 조건: #ifdef _USE_MEMORY_POOL)</div>
+          <div class="arch-node orange">MemoryPool <span class="node-label">— SegmentPool 기반 바이트 재사용</span></div>
+          <div class="arch-connector">상속 (사용 조건: #ifdef _USE_OBJECT_POOL)</div>
+          <div class="arch-node orange">ObjectPool <span class="node-label">— type_index 기반 객체 재사용</span></div>
+        </div>
+      </div>
+
+      <div class="arch-tree" style="margin-top:24px">
+        <div class="arch-node purple">Object <span class="node-label">— 게임 오브젝트 추상 기본 (3분기 #ifdef)</span></div>
+        <div class="arch-indent">
+          <div class="arch-connector">상속</div>
+          <div class="arch-node primary">TestObject <span class="node-label">— 테스트용 구현체</span></div>
+          <div class="arch-connector" style="color:var(--text-muted);font-style:italic">앞으로 Monster, Bullet, Item 등...</div>
+        </div>
+      </div>
+
+      <div class="arch-tree" style="margin-top:24px">
+        <div class="arch-node red">Logger <span class="node-label">— Singleton 아님! LogManager가 소유</span></div>
+        <div class="arch-indent">
+          <div class="arch-connector">소유 (멤버 변수)</div>
+          <div style="font-size:11px;color:var(--text-secondary);padding:4px 0">LogManager._logger</div>
+        </div>
+      </div>
+
+      <div class="arch-tree" style="margin-top:24px">
+        <div class="arch-node orange">SegmentPool <span class="node-label">— Singleton 아님! MemoryPool이 소유</span></div>
+        <div class="arch-indent">
+          <div class="arch-connector">소유 (vector&lt;SegmentPool*&gt;)</div>
+          <div style="font-size:11px;color:var(--text-secondary);padding:4px 0">MemoryPool._Pools</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2. 소유/의존 관계 -->
+    <h2 id="ownership">소유 + 의존 관계</h2>
+
+    <div class="mem-scene fade-in">
+      <div class="mem-scene-title">누가 누구를 소유하고, 누구에게 의존하는가</div>
+
+      <div style="display:flex;flex-direction:column;gap:6px;font-family:var(--font-code);font-size:12px">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <div class="arch-node primary" style="min-width:120px">GameEngine</div>
+          <span style="color:var(--text-muted)">── Init/Destroy 호출 ──→</span>
+          <div class="arch-node green" style="min-width:120px">DirectoryManager</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <div class="arch-node primary" style="min-width:120px">GameEngine</div>
+          <span style="color:var(--text-muted)">── Init/Destroy 호출 ──→</span>
+          <div class="arch-node green" style="min-width:120px">LogManager</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <div class="arch-node primary" style="min-width:120px">GameEngine</div>
+          <span style="color:var(--text-muted)">── Logic()에서 Tick ──→</span>
+          <div class="arch-node green" style="min-width:120px">TimeManager</div>
+        </div>
+
+        <div style="height:8px"></div>
+
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <div class="arch-node green" style="min-width:120px">LogManager</div>
+          <span style="color:var(--text-muted)">── GetPath("Logs") ──→</span>
+          <div class="arch-node green" style="min-width:120px">DirectoryManager</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <div class="arch-node green" style="min-width:120px">LogManager</div>
+          <span style="color:var(--text-muted)">── 소유 (멤버 변수) ──→</span>
+          <div class="arch-node red" style="min-width:120px">Logger</div>
+        </div>
+
+        <div style="height:8px"></div>
+
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <div class="arch-node orange" style="min-width:120px">MemoryPool</div>
+          <span style="color:var(--text-muted)">── 소유 (vector) ──→</span>
+          <div class="arch-node orange" style="min-width:120px">SegmentPool(들)</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3. 초기화/소멸 순서 -->
+    <h2 id="lifecycle">초기화 / 소멸 순서</h2>
+
+    <div class="compare-grid">
+      <div class="compare-item good">
+        <div class="compare-label">Init 순서</div>
+        <div class="mem-steps">
+          <div class="mem-step"><div class="mem-step-num">1</div><div class="mem-step-text"><strong>DirectoryManager</strong>.Init()</div></div>
+          <div class="mem-step"><div class="mem-step-num">2</div><div class="mem-step-text"><strong>LogManager</strong>.Init()</div></div>
+          <div class="mem-step"><div class="mem-step-num">3</div><div class="mem-step-text"><strong>TimeManager</strong>.Init()</div></div>
+        </div>
+        <p style="font-size:11px;color:var(--text-secondary);margin-top:8px">의존 방향: 아래가 위를 필요로 함</p>
+      </div>
+      <div class="compare-item" style="border-color:var(--accent-red)44">
+        <div class="compare-label" style="color:var(--accent-red)">Destroy 순서 (역순!)</div>
+        <div class="mem-steps">
+          <div class="mem-step"><div class="mem-step-num">1</div><div class="mem-step-text"><strong>LogManager</strong>.Destroy()</div></div>
+          <div class="mem-step"><div class="mem-step-num">2</div><div class="mem-step-text"><strong>DirectoryManager</strong>.Destroy()</div></div>
+        </div>
+        <p style="font-size:11px;color:var(--text-secondary);margin-top:8px">LogManager가 DirectoryManager 경로를 쓰니까 먼저 정리</p>
+      </div>
+    </div>
+
+    <div class="info-box">
+      <div class="info-label">왜 역순?</div>
+      나중에 Init된 것이 먼저 Init된 것에 <strong>의존</strong>하니까, Destroy는 의존하는 쪽부터 먼저 정리해야 안전해.
+    </div>
+
+    <!-- 4. 게임 루프 시퀀스 -->
+    <h2 id="gameloop">게임 루프 시퀀스</h2>
+
+    <div class="mem-scene fade-in">
+      <div class="mem-scene-title">매 프레임 실행 흐름</div>
+
+      <div class="flow-diagram"><span class="flow-fn">GameEngine::Run</span>()
+  <span class="flow-arrow">└─</span> <span class="flow-highlight">while (_bIsRun)</span>
+       <span class="flow-arrow">│</span>
+       <span class="flow-arrow">├─</span> <span class="flow-desc">메시지 있음?</span>
+       <span class="flow-arrow">│</span>   <span class="flow-arrow">├─</span> <span class="flow-fn">PeekMessage</span>
+       <span class="flow-arrow">│</span>   <span class="flow-arrow">├─</span> <span class="flow-fn">TranslateMessage</span>
+       <span class="flow-arrow">│</span>   <span class="flow-arrow">└─</span> <span class="flow-fn">DispatchMessage</span> → <span class="flow-fn">WndProc</span> (static)
+       <span class="flow-arrow">│</span>        <span class="flow-arrow">├─</span> WM_PAINT
+       <span class="flow-arrow">│</span>        <span class="flow-arrow">└─</span> WM_DESTROY → <span class="flow-highlight">_bIsRun = false</span>
+       <span class="flow-arrow">│</span>
+       <span class="flow-arrow">└─</span> <span class="flow-desc">메시지 없음 (데드타임)</span>
+            <span class="flow-arrow">└─</span> <span class="flow-fn">Logic</span>()
+                 <span class="flow-arrow">├─</span> dt = <span class="flow-fn">TimeManager::Tick</span>()     <span class="flow-desc">← deltaTime 계산</span>
+                 <span class="flow-arrow">└─</span> <span class="flow-fn">Tick</span>(dt)
+                      <span class="flow-arrow">└─</span> <span class="flow-fn">LogManager::Tick</span>()     <span class="flow-desc">← 로그 큐 → 파일</span>
+                           <span class="flow-desc">(앞으로: Input, Scene, Render...)</span></div>
+    </div>
+
+    <!-- 5. 조건부 컴파일 분기 -->
+    <h2 id="ifdef">조건부 컴파일 — 빌드별 활성 클래스</h2>
+
+    <div class="mem-scene fade-in">
+      <div class="mem-scene-title">빌드 구성에 따라 존재하는 클래스가 달라짐</div>
+
+      <div class="type-table-wrap">
+        <table class="type-table">
+          <thead><tr><th>클래스</th><th>Debug (shared_ptr)</th><th>Debug_OP</th><th>Debug_MP</th></tr></thead>
+          <tbody>
+            <tr><td class="t-name">GameEngine</td><td class="t-desc" style="color:var(--accent-green)">O</td><td class="t-desc" style="color:var(--accent-green)">O</td><td class="t-desc" style="color:var(--accent-green)">O</td></tr>
+            <tr><td class="t-name">TimeManager</td><td class="t-desc" style="color:var(--accent-green)">O</td><td class="t-desc" style="color:var(--accent-green)">O</td><td class="t-desc" style="color:var(--accent-green)">O</td></tr>
+            <tr><td class="t-name">DirectoryManager</td><td class="t-desc" style="color:var(--accent-green)">O</td><td class="t-desc" style="color:var(--accent-green)">O</td><td class="t-desc" style="color:var(--accent-green)">O</td></tr>
+            <tr><td class="t-name">LogManager</td><td class="t-desc" style="color:var(--accent-green)">O</td><td class="t-desc" style="color:var(--accent-green)">O</td><td class="t-desc" style="color:var(--accent-green)">O</td></tr>
+            <tr><td class="t-name">Logger</td><td class="t-desc" style="color:var(--accent-green)">O</td><td class="t-desc" style="color:var(--accent-green)">O</td><td class="t-desc" style="color:var(--accent-green)">O</td></tr>
+            <tr><td class="t-name">ObjectPool</td><td class="t-desc" style="color:var(--accent-red)">X</td><td class="t-desc" style="color:var(--accent-green)">O</td><td class="t-desc" style="color:var(--accent-red)">X</td></tr>
+            <tr><td class="t-name">MemoryPool</td><td class="t-desc" style="color:var(--accent-red)">X</td><td class="t-desc" style="color:var(--accent-red)">X</td><td class="t-desc" style="color:var(--accent-green)">O</td></tr>
+            <tr><td class="t-name">SegmentPool</td><td class="t-desc" style="color:var(--accent-red)">X</td><td class="t-desc" style="color:var(--accent-red)">X</td><td class="t-desc" style="color:var(--accent-green)">O</td></tr>
+            <tr><td class="t-name">Object (shared_ptr)</td><td class="t-desc" style="color:var(--accent-green)">O</td><td class="t-desc" style="color:var(--accent-red)">X</td><td class="t-desc" style="color:var(--accent-red)">X</td></tr>
+            <tr><td class="t-name">Object (pool)</td><td class="t-desc" style="color:var(--accent-red)">X</td><td class="t-desc" style="color:var(--accent-green)">O</td><td class="t-desc" style="color:var(--accent-red)">X</td></tr>
+            <tr><td class="t-name">Object (memory)</td><td class="t-desc" style="color:var(--accent-red)">X</td><td class="t-desc" style="color:var(--accent-red)">X</td><td class="t-desc" style="color:var(--accent-green)">O</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="info-box">
+      <div class="info-label">Defines.h 통합 API</div>
+      <code>Ptr&lt;T&gt;</code>, <code>New&lt;T&gt;()</code>, <code>Delete&lt;T&gt;()</code>는 <strong>모든 빌드에서 존재</strong>하지만, 내부 구현이 빌드 구성에 따라 달라짐.
+      사용 코드는 전략과 무관하게 동일.
+    </div>
+
+    <!-- 6. 폴더-클래스 매핑 -->
+    <h2 id="folders">폴더 ↔ 클래스 매핑</h2>
+
+    <div class="folder-map fade-in">
+      <div class="folder-col">
+        <div class="folder-name" style="color:var(--accent-orange)">Common/</div>
+        <div class="folder-item">Singleton.h — CRTP 싱글톤 베이스</div>
+        <div class="folder-item">Info.h — 정수 타입 앨리어스 + eObjectType</div>
+        <div class="folder-item">LogManager.h/cpp — 로그 파일 관리</div>
+      </div>
+      <div class="folder-col">
+        <div class="folder-name" style="color:var(--accent)">Core/</div>
+        <div class="folder-item">GameEngine.h/cpp — 엔진 진입점</div>
+        <div class="folder-item">TimeManager.h/cpp — deltaTime</div>
+        <div class="folder-item">DirectoryManager.h/cpp — 경로 관리</div>
+        <div class="folder-item">Defines.h — Ptr/New/Delete 통합 API</div>
+        <div class="folder-item">Object.h/cpp — 게임 오브젝트 베이스 (3분기)</div>
+        <div class="folder-item">Logger.h — 로그 작성 (폴드 표현식)</div>
+        <div class="folder-item">ObjectPool.h/cpp — (#ifdef)</div>
+        <div class="folder-item">MemoryPool.h/cpp — (#ifdef)</div>
+        <div class="folder-item">SegmentPool.h/cpp — (#ifdef, MemoryPool 소유)</div>
+      </div>
+      <div class="folder-col">
+        <div class="folder-name" style="color:var(--accent-green)">Object/</div>
+        <div class="folder-item">TestObject.h/cpp — Object 상속 테스트용</div>
+        <div class="folder-item" style="color:var(--text-muted);font-style:italic">(앞으로 Monster, Bullet 등)</div>
+      </div>
+      <div class="folder-col">
+        <div class="folder-name" style="color:var(--text-secondary)">루트 (Client/)</div>
+        <div class="folder-item">Client.cpp — wWinMain (GameEngine 2줄)</div>
+        <div class="folder-item">Client.h — Resource.h 포함</div>
+        <div class="folder-item">framework.h — Windows API 헤더</div>
+        <div class="folder-item">Resource.h — 리소스 ID</div>
+      </div>
+    </div>
+
+    <!-- Prev / Next -->
+    <div class="page-nav" id="page-nav"></div>
+
+  <script>
+  var PAGE_ID = "0004_05";
+  var ON_THIS_PAGE = [
+    { id: "inheritance", label: "클래스 상속 트리" },
+    { id: "ownership", label: "소유 + 의존 관계" },
+    { id: "lifecycle", label: "초기화 / 소멸 순서" },
+    { id: "gameloop", label: "게임 루프 시퀀스" },
+    { id: "ifdef", label: "조건부 컴파일 분기" },
+    { id: "folders", label: "폴더 ↔ 클래스 매핑" },
+  ];
+  </script>
+  <script src="nav.js"></script>
+  </main>
+</body>
+</html>

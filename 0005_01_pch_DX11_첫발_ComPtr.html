@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>pch.h + DX11 첫 발 | DX11 노트</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <header class="header">
+    <button class="hamburger" id="hamburger" aria-label="메뉴 열기">
+      <span></span><span></span><span></span>
+    </button>
+    <div class="header-logo">
+      <a href="index.html" style="color:inherit;text-decoration:none">DX11 NOTE</a>
+      <span class="subtitle">Day 05</span>
+    </div>
+    <button class="theme-toggle" id="themeToggle" aria-label="테마 전환">
+      <span class="theme-toggle-icon"></span>
+    </button>
+  </header>
+
+  <div class="sidebar-overlay" id="sidebarOverlay"></div>
+  <nav class="sidebar" id="sidebar"></nav>
+
+  <main class="main-content content">
+    <div class="page-title fade-in">
+      <span class="tag tag-day">DAY 05</span>
+      <h1>pch.h + DX11 첫 발<br>ComPtr</h1>
+      <p class="page-desc">드디어 DirectX 11이 프로젝트에 들어왔다. 미리 컴파일된 헤더, DX11 라이브러리 구성, COM 스마트 포인터.</p>
+    </div>
+
+    <!-- 변경 파일 -->
+    <h2 id="files">변경된 파일</h2>
+    <div class="file-grid fade-in fade-in-d1">
+      <div class="file-card"><div class="file-icon h">h</div><div><div class="file-name">pch.h</div><div class="file-role">신규 — 미리 컴파일된 헤더</div></div></div>
+      <div class="file-card"><div class="file-icon cpp">cpp</div><div><div class="file-name">pch.cpp</div><div class="file-role">신규 — pch Create용 (1줄)</div></div></div>
+      <div class="file-card"><div class="file-icon h">h</div><div><div class="file-name">Core/Device.h</div><div class="file-role">신규 — DX11 디바이스 초기화</div></div></div>
+      <div class="file-card"><div class="file-icon cpp">cpp</div><div><div class="file-name">Core/Device.cpp</div><div class="file-role">신규 — 150줄+ 초기화 구현</div></div></div>
+      <div class="file-card"><div class="file-icon h">h</div><div><div class="file-name">Common/Vector2D/3D/4D</div><div class="file-role">신규 — 벡터 수학 라이브러리</div></div></div>
+      <div class="file-card"><div class="file-icon h">h</div><div><div class="file-name">Common/Info.h</div><div class="file-role">수정 — FResolution 추가</div></div></div>
+    </div>
+
+    <!-- pch.h -->
+    <h2 id="pch">pch.h — 미리 컴파일된 헤더</h2>
+
+    <h3>왜 필요한가?</h3>
+    <p><code>#include &lt;vector&gt;</code> 하면 컴파일러가 <strong>매번</strong> 그 헤더를 파싱해. 파일 50개면 50번. STL 헤더는 수만 줄이라 이게 <strong>빌드 시간의 대부분</strong>을 차지해.</p>
+    <p>pch.h에 모아두면 <strong>한 번만 컴파일</strong>하고 캐싱. 이후 모든 .cpp가 캐시를 재사용.</p>
+
+    <div class="compare-grid">
+      <div class="compare-item bad">
+        <div class="compare-label">pch 없이</div>
+        <p style="font-size:12px;color:var(--text-secondary)">50개 .cpp × &lt;vector&gt; 파싱<br>= <strong>50번 반복</strong> (느림)</p>
+      </div>
+      <div class="compare-item good">
+        <div class="compare-label">pch 있으면</div>
+        <p style="font-size:12px;color:var(--text-secondary)">&lt;vector&gt; <strong>1번</strong> 컴파일 + 캐싱<br>50개 .cpp가 캐시 재사용 (빠름)</p>
+      </div>
+    </div>
+
+    <h3>pch.h 전체 코드</h3>
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> 미리 컴파일된 헤더 <span class="filename">pch.h</span></div>
+<pre><span class="pp">#pragma once</span>
+
+<span class="pp">#include</span> &lt;<span class="str">memory</span>&gt;
+<span class="pp">#include</span> &lt;<span class="str">chrono</span>&gt;
+<span class="pp">#include</span> &lt;<span class="str">vector</span>&gt;
+<span class="pp">#include</span> &lt;<span class="str">unordered_map</span>&gt;
+<span class="pp">#include</span> &lt;<span class="str">map</span>&gt;
+<span class="pp">#include</span> &lt;<span class="str">queue</span>&gt;
+<span class="pp">#include</span> &lt;<span class="str">stack</span>&gt;
+<span class="pp">#include</span> &lt;<span class="str">string</span>&gt;
+
+<span class="pp">#include</span> &lt;<span class="str">Common/Vector2D.h</span>&gt;
+<span class="pp">#include</span> &lt;<span class="str">Common/Vector3D.h</span>&gt;
+<span class="pp">#include</span> &lt;<span class="str">Common/Vector4D.h</span>&gt;
+
+<span class="kw">using</span> <span class="tp">uint8</span> = <span class="tp">unsigned char</span>;
+<span class="kw">using</span> <span class="tp">uint16</span> = <span class="tp">unsigned short</span>;
+<span class="kw">using</span> <span class="tp">uint32</span> = <span class="tp">unsigned int</span>;
+<span class="kw">using</span> <span class="tp">uint64</span> = <span class="tp">unsigned long long</span>;
+<span class="kw">using</span> <span class="tp">int8</span> = <span class="tp">char</span>;
+<span class="kw">using</span> <span class="tp">int16</span> = <span class="tp">short</span>;
+<span class="kw">using</span> <span class="tp">int32</span> = <span class="tp">int</span>;
+<span class="kw">using</span> <span class="tp">int64</span> = <span class="tp">long long</span>;
+
+<span class="cm">// DirectX11 헤더</span>
+<span class="pp">#include</span> &lt;<span class="str">d3d11.h</span>&gt;          <span class="cm">// DX11 핵심</span>
+<span class="pp">#include</span> &lt;<span class="str">d3dcompiler.h</span>&gt;    <span class="cm">// HLSL 셰이더 컴파일러</span>
+<span class="pp">#include</span> &lt;<span class="str">dwrite_3.h</span>&gt;       <span class="cm">// DirectWrite (텍스트)</span>
+<span class="pp">#include</span> &lt;<span class="str">d2d1.h</span>&gt;           <span class="cm">// Direct2D (2D 렌더링)</span>
+
+<span class="cm">// 라이브러리 링크</span>
+<span class="pp">#pragma comment</span>(lib, <span class="str">"d3d11.lib"</span>)
+<span class="pp">#pragma comment</span>(lib, <span class="str">"d3dcompiler.lib"</span>)
+<span class="pp">#pragma comment</span>(lib, <span class="str">"dxguid.lib"</span>)
+<span class="pp">#pragma comment</span>(lib, <span class="str">"dwrite.lib"</span>)
+<span class="pp">#pragma comment</span>(lib, <span class="str">"d2d1.lib"</span>)
+
+<span class="cm">// DX11 COM 스마트 포인터</span>
+<span class="pp">#include</span> <span class="str">"wrl.h"</span>
+<span class="kw">using namespace</span> <span class="tp">Microsoft::WRL</span>;</pre>
+    </div>
+
+    <!-- 넣어도 됨 / 안 됨 -->
+    <div class="type-table-wrap fade-in">
+      <table class="type-table">
+        <thead><tr><th>넣어도 됨 (거의 안 바뀜)</th><th>넣으면 안 됨 (자주 바뀜)</th></tr></thead>
+        <tbody>
+          <tr><td class="t-desc">STL 헤더 (&lt;vector&gt;, &lt;map&gt;)</td><td class="t-desc" style="color:var(--accent-red)">게임 오브젝트 (Monster.h, Item.h)</td></tr>
+          <tr><td class="t-desc">DX11 헤더 (&lt;d3d11.h&gt;)</td><td class="t-desc" style="color:var(--accent-red)">게임 로직 (Scene.h, State.h)</td></tr>
+          <tr><td class="t-desc">수학 라이브러리 (Vector2D.h)</td><td class="t-desc" style="color:var(--accent-red)">자주 수정하는 헤더</td></tr>
+          <tr><td class="t-desc">타입 정의 (uint32 등)</td><td class="t-desc"></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="info-box">
+      <div class="info-label">강사님 주석</div>
+      "바꾸면 또 다시 전부 다 빌드해야하기 때문에 오히려 빌드시간이 늘어날수도 있어요.."
+    </div>
+
+    <!-- pch 사용 규칙 -->
+    <h3>pch 사용 규칙</h3>
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> 모든 .cpp 파일의 첫 줄</div>
+<pre><span class="pp">#include</span> <span class="str">"pch.h"</span>  <span class="cm">// ← 반드시 첫 번째 #include!</span></pre>
+    </div>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">XML</span> vcxproj pch 설정</div>
+<pre>&lt;<span class="tp">PrecompiledHeader</span>&gt;<span class="str">Use</span>&lt;/<span class="tp">PrecompiledHeader</span>&gt;
+&lt;<span class="tp">PrecompiledHeaderFile</span>&gt;<span class="str">pch.h</span>&lt;/<span class="tp">PrecompiledHeaderFile</span>&gt;
+
+<span class="cm">&lt;!-- pch.cpp만 Create --&gt;</span>
+&lt;<span class="tp">ClCompile</span> <span class="fn">Include</span>=<span class="str">"pch.cpp"</span>&gt;
+  &lt;<span class="tp">PrecompiledHeader</span>&gt;<span class="str">Create</span>&lt;/<span class="tp">PrecompiledHeader</span>&gt;
+&lt;/<span class="tp">ClCompile</span>&gt;</pre>
+    </div>
+
+    <!-- <> vs "" -->
+    <h2 id="include-path">꺾쇠 vs 따옴표 include</h2>
+
+    <div class="compare-grid">
+      <div class="compare-item" style="border-color:#58a6ff44">
+        <div class="compare-label" style="color:var(--accent)">&lt;Common/Vector2D.h&gt; 꺾쇠</div>
+        <p style="font-size:12px;color:var(--text-secondary)">시스템/라이브러리 검색 경로에서 찾음.<br>pch.h에서 이걸 쓴 이유: <code>AdditionalIncludeDirectories</code>에 <code>$(SolutionDir)Client\</code>가 있어서 <strong>시스템 경로처럼 동작</strong>.</p>
+      </div>
+      <div class="compare-item" style="border-color:#3fb95044">
+        <div class="compare-label" style="color:var(--accent-green)">"Core/GameEngine.h" 따옴표</div>
+        <p style="font-size:12px;color:var(--text-secondary)">현재 파일 기준 상대 경로에서 먼저 찾고, 없으면 시스템 경로. <strong>프로젝트 헤더</strong>에 보통 사용.</p>
+      </div>
+    </div>
+
+    <!-- DX11 라이브러리 -->
+    <h2 id="dx11-libs">DX11 라이브러리 구성</h2>
+
+    <div class="type-table-wrap fade-in">
+      <table class="type-table">
+        <thead><tr><th>헤더 (API 선언)</th><th>라이브러리 (구현체)</th><th>용도</th></tr></thead>
+        <tbody>
+          <tr><td class="t-name">&lt;d3d11.h&gt;</td><td class="t-real">d3d11.lib</td><td class="t-desc">DX11 핵심 — Device, Context, SwapChain</td></tr>
+          <tr><td class="t-name">&lt;d3dcompiler.h&gt;</td><td class="t-real">d3dcompiler.lib</td><td class="t-desc">HLSL 셰이더 런타임 컴파일</td></tr>
+          <tr><td class="t-name"></td><td class="t-real">dxguid.lib</td><td class="t-desc">DX GUID 모음</td></tr>
+          <tr><td class="t-name">&lt;dwrite_3.h&gt;</td><td class="t-real">dwrite.lib</td><td class="t-desc">DirectWrite — 텍스트 렌더링</td></tr>
+          <tr><td class="t-name">&lt;d2d1.h&gt;</td><td class="t-real">d2d1.lib</td><td class="t-desc">Direct2D — 2D 렌더링</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p><code>#pragma comment(lib, ...)</code> — 링커에게 "이 .lib도 같이 링크해줘"라고 알려주는 것. vcxproj의 "추가 종속성"과 같은 효과.</p>
+
+    <!-- ComPtr -->
+    <h2 id="comptr">ComPtr — DX11 객체의 스마트 포인터</h2>
+
+    <p>DX11 객체는 COM 기반이야. <code>new</code>/<code>delete</code> 대신 <code>AddRef</code>/<code>Release</code>로 수명을 관리해. <code>ComPtr</code>은 COM 전용 스마트 포인터 — 자동으로 <code>Release()</code> 호출.</p>
+
+    <div class="type-table-wrap fade-in">
+      <table class="type-table">
+        <thead><tr><th></th><th>생 포인터</th><th>ComPtr</th></tr></thead>
+        <tbody>
+          <tr><td class="t-name">선언</td><td class="t-real">ID3D11Device* dev;</td><td class="t-real">ComPtr&lt;ID3D11Device&gt; dev;</td></tr>
+          <tr><td class="t-name">해제</td><td class="t-desc">dev-&gt;Release(); (수동)</td><td class="t-desc" style="color:var(--accent-green)">소멸자가 자동 호출</td></tr>
+          <tr><td class="t-name">주소 얻기</td><td class="t-real">&amp;dev</td><td class="t-real">dev.GetAddressOf()</td></tr>
+          <tr><td class="t-name">포인터 꺼내기</td><td class="t-real">dev</td><td class="t-real">dev.Get()</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- FResolution -->
+    <h2 id="fresolution">FResolution — 해상도 구조체</h2>
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> <span class="filename">Common/Info.h</span></div>
+<pre><span class="kw">struct</span> <span class="tp">FResolution</span>
+{
+    <span class="tp">uint32</span> _width = <span class="num">0</span>;
+    <span class="tp">uint32</span> _height = <span class="num">0</span>;
+};</pre>
+    </div>
+    <p>Device 클래스에서 창 해상도(1280x720)를 저장하는 용도.</p>
+
+    <div class="page-nav" id="page-nav"></div>
+
+  <script>
+  var PAGE_ID = "0005_01";
+  var ON_THIS_PAGE = [
+    { id: "files", label: "변경 파일" },
+    { id: "pch", label: "pch.h" },
+    { id: "include-path", label: "꺾쇠 vs 따옴표" },
+    { id: "dx11-libs", label: "DX11 라이브러리" },
+    { id: "comptr", label: "ComPtr" },
+    { id: "fresolution", label: "FResolution" },
+  ];
+  </script>
+  <script src="nav.js"></script>
+  </main>
+</body>
+</html>

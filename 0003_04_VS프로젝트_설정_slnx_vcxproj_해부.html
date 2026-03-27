@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VS 프로젝트 설정 해부 | DX11 노트</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <header class="header">
+    <button class="hamburger" id="hamburger" aria-label="메뉴 열기">
+      <span></span><span></span><span></span>
+    </button>
+    <div class="header-logo">
+      <a href="index.html" style="color:inherit;text-decoration:none">DX11 NOTE</a>
+      <span class="subtitle">Deep Dive</span>
+    </div>
+    <button class="theme-toggle" id="themeToggle" aria-label="테마 전환">
+      <span class="theme-toggle-icon"></span>
+    </button>
+  </header>
+
+  <div class="sidebar-overlay" id="sidebarOverlay"></div>
+  <nav class="sidebar" id="sidebar"></nav>
+
+  <main class="main-content content">
+    <div class="page-title fade-in">
+      <span class="tag tag-detail">DEEP DIVE</span>
+      <h1>VS 프로젝트 설정 해부<br>slnx / vcxproj / filters</h1>
+      <p class="page-desc">강사님이 폴더 구조를 만들면서 프로젝트 설정도 상당히 건드셨다. 어떤 설정을 왜 했는지, 기본값과 뭐가 다른지.</p>
+    </div>
+
+    <!-- 파일 3개 역할 -->
+    <h2 id="roles">파일 3개의 역할</h2>
+    <div class="file-grid fade-in fade-in-d1">
+      <div class="file-card"><div class="file-icon rc">sln</div><div><div class="file-name">Game2D.slnx</div><div class="file-role">솔루션 — 빌드 구성 + 프로젝트 목록</div></div></div>
+      <div class="file-card"><div class="file-icon h">vcx</div><div><div class="file-name">Client.vcxproj</div><div class="file-role">프로젝트 — 컴파일 옵션, 매크로, 파일 목록</div></div></div>
+      <div class="file-card"><div class="file-icon h">flt</div><div><div class="file-name">Client.vcxproj.filters</div><div class="file-role">필터 — VS 탐색기 가상 폴더 구조</div></div></div>
+    </div>
+
+    <!-- 1. slnx -->
+    <h2 id="slnx">1. Game2D.slnx — 솔루션 파일</h2>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">XML</span> 솔루션 빌드 구성 <span class="filename">Game2D.slnx</span></div>
+<pre>&lt;<span class="tp">Solution</span>&gt;
+  &lt;<span class="tp">Configurations</span>&gt;
+    &lt;<span class="tp">BuildType</span> <span class="fn">Name</span>=<span class="str">"Debug"</span> /&gt;
+    &lt;<span class="tp">BuildType</span> <span class="fn">Name</span>=<span class="str">"Debug_MP"</span> /&gt;
+    &lt;<span class="tp">BuildType</span> <span class="fn">Name</span>=<span class="str">"Debug_OP"</span> /&gt;
+    &lt;<span class="tp">BuildType</span> <span class="fn">Name</span>=<span class="str">"Release"</span> /&gt;
+    &lt;<span class="tp">Platform</span> <span class="fn">Name</span>=<span class="str">"x64"</span> /&gt;
+    &lt;<span class="tp">Platform</span> <span class="fn">Name</span>=<span class="str">"x86"</span> /&gt;
+  &lt;/<span class="tp">Configurations</span>&gt;
+  &lt;<span class="tp">Project</span> <span class="fn">Path</span>=<span class="str">"Client/Client.vcxproj"</span> <span class="fn">Id</span>=<span class="str">"fae35489-..."</span> /&gt;
+&lt;/<span class="tp">Solution</span>&gt;</pre>
+    </div>
+
+    <p>VS에서 프로젝트를 새로 만들면 <code>Debug</code>/<code>Release</code> 2개만 있어. 강사님이 <strong>2개를 추가</strong>한 거:</p>
+
+    <div class="type-table-wrap fade-in">
+      <table class="type-table">
+        <thead><tr><th>빌드 구성</th><th>기본 제공</th><th>용도</th></tr></thead>
+        <tbody>
+          <tr><td class="t-name">Debug</td><td class="t-desc">O</td><td class="t-desc">기본 디버그 (shared_ptr 전략)</td></tr>
+          <tr><td class="t-name">Release</td><td class="t-desc">O</td><td class="t-desc">최적화 빌드</td></tr>
+          <tr><td class="t-name" style="color:var(--accent-green)">Debug_MP</td><td class="t-desc" style="color:var(--accent-green)">추가</td><td class="t-desc">MemoryPool 전략 (<code>_USE_MEMORY_POOL</code>)</td></tr>
+          <tr><td class="t-name" style="color:var(--accent-green)">Debug_OP</td><td class="t-desc" style="color:var(--accent-green)">추가</td><td class="t-desc">ObjectPool 전략 (<code>_USE_OBJECT_POOL</code>)</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p>플랫폼: <code>x64</code>(64비트) + <code>x86</code>(32비트). 조합하면 총 <strong>4 구성 x 2 플랫폼 = 8가지</strong> 빌드가 가능.</p>
+
+    <div class="info-box">
+      <div class="info-label">slnx vs sln</div>
+      <code>.slnx</code>는 VS 2022 17.10+에서 도입된 <strong>XML 기반 솔루션 포맷</strong>. 기존 <code>.sln</code>은 독자적인 텍스트 포맷이라 읽기 어려웠는데, XML로 바뀌면서 깔끔해짐.
+    </div>
+
+    <!-- 2. vcxproj -->
+    <h2 id="vcxproj">2. Client.vcxproj — 핵심 빌드 설정</h2>
+
+    <!-- 2-1 전처리기 -->
+    <h3 id="preprocessor">2-1. 전처리기 매크로</h3>
+    <p>이게 <strong>3가지 메모리 전략을 전환하는 핵심 메커니즘</strong>:</p>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">XML</span> 빌드 구성별 전처리기 정의 <span class="filename">Client.vcxproj</span></div>
+<pre><span class="cm">&lt;!-- Debug (x64) — 기본: shared_ptr --&gt;</span>
+&lt;<span class="tp">PreprocessorDefinitions</span>&gt;<span class="mc">_DEBUG</span>;<span class="mc">_WINDOWS</span>;%(PreprocessorDefinitions)&lt;/<span class="tp">PreprocessorDefinitions</span>&gt;
+
+<span class="cm">&lt;!-- Debug_OP (x64) — ObjectPool --&gt;</span>
+&lt;<span class="tp">PreprocessorDefinitions</span>&gt;<span class="mc">_DEBUG</span>;<span class="mc">_WINDOWS</span>;<span class="mc" style="color:var(--accent-green)">_USE_OBJECT_POOL</span>;%(PreprocessorDefinitions)&lt;/<span class="tp">PreprocessorDefinitions</span>&gt;
+
+<span class="cm">&lt;!-- Debug_MP (x64) — MemoryPool --&gt;</span>
+&lt;<span class="tp">PreprocessorDefinitions</span>&gt;<span class="mc">_DEBUG</span>;<span class="mc">_WINDOWS</span>;<span class="mc" style="color:var(--accent-green)">_USE_MEMORY_POOL</span>;%(PreprocessorDefinitions)&lt;/<span class="tp">PreprocessorDefinitions</span>&gt;
+
+<span class="cm">&lt;!-- Release (x64) --&gt;</span>
+&lt;<span class="tp">PreprocessorDefinitions</span>&gt;<span class="mc">NDEBUG</span>;<span class="mc">_WINDOWS</span>;%(PreprocessorDefinitions)&lt;/<span class="tp">PreprocessorDefinitions</span>&gt;</pre>
+    </div>
+
+    <!-- 빌드→매크로→코드 흐름 시각화 -->
+    <div class="mem-scene fade-in">
+      <div class="mem-scene-title">빌드 구성 → 매크로 → 코드 분기 흐름</div>
+      <div class="mem-steps">
+        <div class="mem-step"><div class="mem-step-num">1</div><div class="mem-step-text">VS에서 <strong>Debug_OP | x64</strong> 선택</div></div>
+        <div class="mem-step"><div class="mem-step-num">2</div><div class="mem-step-text">vcxproj가 <code>_USE_OBJECT_POOL</code> 매크로를 컴파일러에 전달</div></div>
+        <div class="mem-step"><div class="mem-step-num">3</div><div class="mem-step-text">Defines.h의 <code>#elif _USE_OBJECT_POOL</code> 분기 활성화</div></div>
+        <div class="mem-step"><div class="mem-step-num">4</div><div class="mem-step-text"><code>New&lt;T&gt;()</code> → <code>ObjectPool::Rent&lt;T&gt;()</code> 호출</div></div>
+      </div>
+    </div>
+
+    <div class="type-table-wrap">
+      <table class="type-table">
+        <thead><tr><th>빌드 구성</th><th>정의되는 매크로</th><th>코드에서의 효과</th></tr></thead>
+        <tbody>
+          <tr><td class="t-name">Debug</td><td class="t-real">_DEBUG, _WINDOWS</td><td class="t-desc">#else → shared_ptr</td></tr>
+          <tr><td class="t-name">Debug_OP</td><td class="t-real">_DEBUG, _WINDOWS, _USE_OBJECT_POOL</td><td class="t-desc">ObjectPool 활성화</td></tr>
+          <tr><td class="t-name">Debug_MP</td><td class="t-real">_DEBUG, _WINDOWS, _USE_MEMORY_POOL</td><td class="t-desc">MemoryPool 활성화</td></tr>
+          <tr><td class="t-name">Release</td><td class="t-real">NDEBUG, _WINDOWS</td><td class="t-desc">shared_ptr + 최적화</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p><code>%(PreprocessorDefinitions)</code> — 이전에 정의된 매크로를 상속하겠다는 뜻. 안 넣으면 부모 설정이 날아감.</p>
+
+    <div class="warn-box">
+      <div class="warn-label">Win32(x86) 빌드에는 전략 매크로가 없다</div>
+      <strong>x64에서만</strong> <code>_USE_OBJECT_POOL</code> / <code>_USE_MEMORY_POOL</code>이 정의됨. Win32 빌드에서는 Debug_OP/Debug_MP를 선택해도 <strong>shared_ptr 전략으로 빌드됨</strong>. 요즘 컴퓨터는 거의 다 64비트라 x86 설정은 안 건드신 것으로 보임.
+    </div>
+
+    <!-- 2-2 C++20 -->
+    <h3 id="cpp20">2-2. C++ 언어 표준</h3>
+    <div class="code-block">
+      <div class="code-header"><span class="lang">XML</span> C++20 설정 <span class="filename">Client.vcxproj</span></div>
+<pre>&lt;<span class="tp">LanguageStandard</span>&gt;<span class="str">stdcpp20</span>&lt;/<span class="tp">LanguageStandard</span>&gt;</pre>
+    </div>
+
+    <p><strong>C++20</strong> 사용. 기본값은 <code>stdcpp14</code>인데 올린 거. C++20 기능 중 이 프로젝트에서 쓰일 수 있는 것들:</p>
+    <ul>
+      <li><code>std::format</code> (문자열 포맷)</li>
+      <li>Concepts (템플릿 제약)</li>
+      <li>Ranges</li>
+      <li><code>std::span</code></li>
+    </ul>
+
+    <!-- 2-3 Include -->
+    <h3 id="include">2-3. 추가 포함 디렉토리</h3>
+    <div class="code-block">
+      <div class="code-header"><span class="lang">XML</span> AdditionalIncludeDirectories <span class="filename">Client.vcxproj</span></div>
+<pre>&lt;<span class="tp">AdditionalIncludeDirectories</span>&gt;<span class="str">$(SolutionDir)Client\</span>;%(AdditionalIncludeDirectories)&lt;/<span class="tp">AdditionalIncludeDirectories</span>&gt;</pre>
+    </div>
+
+    <p>이게 <strong>폴더 구조 리팩토링의 핵심 설정</strong>. 이 줄이 없으면:</p>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> Include 경로 문제</div>
+<pre><span class="pp">#include</span> <span class="str">"Core/ObjectPool.h"</span>      <span class="cm">// ← Client.cpp에서 이렇게 써야 함</span>
+<span class="cm">// ObjectPool.h 안에서 다시:</span>
+<span class="pp">#include</span> <span class="str">"Common/Singleton.h"</span>     <span class="cm">// ← Core/ 기준 상대 경로라 안 찾아짐!</span></pre>
+    </div>
+
+    <div class="analogy-box">
+      <div class="analogy-header">
+        <span class="analogy-icon">📂</span>
+        <span class="analogy-title">ANALOGY — 작업 디렉토리</span>
+      </div>
+      <div class="analogy-content">
+        <code>$(SolutionDir)Client\</code>를 포함 경로에 추가하면, <strong>Client 폴더가 루트처럼</strong> 작동해서 어디서든 <code>"Common/Singleton.h"</code>, <code>"Core/Object.h"</code> 같은 경로로 include 가능.<br><br>
+        마치 터미널에서 <code>cd Client</code> 하고 나서 모든 파일을 찾는 것처럼.
+      </div>
+    </div>
+
+    <!-- 2-4 출력 디렉토리 -->
+    <h3 id="outdir">2-4. 출력 디렉토리</h3>
+    <div class="code-block">
+      <div class="code-header"><span class="lang">XML</span> OutDir / IntDir <span class="filename">Client.vcxproj</span></div>
+<pre>&lt;<span class="tp">OutDir</span>&gt;<span class="str">$(SolutionDir)Bin/</span>&lt;/<span class="tp">OutDir</span>&gt;
+&lt;<span class="tp">IntDir</span>&gt;<span class="str">$(SolutionDir)Bin\BinObj/</span>&lt;/<span class="tp">IntDir</span>&gt;</pre>
+    </div>
+
+    <div class="type-table-wrap">
+      <table class="type-table">
+        <thead><tr><th>설정</th><th>기본값</th><th>변경된 값</th><th>의미</th></tr></thead>
+        <tbody>
+          <tr><td class="t-name">OutDir</td><td class="t-real">$(SolutionDir)$(Configuration)\</td><td class="t-real" style="color:var(--accent-green)">$(SolutionDir)Bin/</td><td class="t-desc">실행 파일(.exe) 출력 위치</td></tr>
+          <tr><td class="t-name">IntDir</td><td class="t-real">$(Configuration)\</td><td class="t-real" style="color:var(--accent-green)">$(SolutionDir)Bin\BinObj/</td><td class="t-desc">중간 파일(.obj) 출력 위치</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p>기본값이면 <code>Debug/</code>, <code>Release/</code> 폴더가 여러 개 생기는데, 전부 <code>Bin/</code>으로 통합한 거. 깔끔하지만, <strong>빌드 구성별 출력이 섞일 수 있는</strong> 점은 주의.</p>
+
+    <!-- 2-5 공통 설정 -->
+    <h3 id="common">2-5. 공통 설정 요약</h3>
+    <div class="type-table-wrap fade-in">
+      <table class="type-table">
+        <thead><tr><th>설정</th><th>값</th><th>의미</th></tr></thead>
+        <tbody>
+          <tr><td class="t-name">ConfigurationType</td><td class="t-real">Application</td><td class="t-desc">실행 파일(.exe) 생성</td></tr>
+          <tr><td class="t-name">PlatformToolset</td><td class="t-real">v145</td><td class="t-desc">VS 2022+ 컴파일러</td></tr>
+          <tr><td class="t-name">CharacterSet</td><td class="t-real">Unicode</td><td class="t-desc">WCHAR(2바이트) 문자 사용</td></tr>
+          <tr><td class="t-name">WarningLevel</td><td class="t-real">Level3</td><td class="t-desc">경고 수준 3 (기본적인 경고 표시)</td></tr>
+          <tr><td class="t-name">SDLCheck</td><td class="t-real">true</td><td class="t-desc">보안 개발 수명 주기 검사</td></tr>
+          <tr><td class="t-name">ConformanceMode</td><td class="t-real">true</td><td class="t-desc">C++ 표준 준수 모드</td></tr>
+          <tr><td class="t-name">SubSystem</td><td class="t-real">Windows</td><td class="t-desc">Win32 GUI 앱 (콘솔 아님)</td></tr>
+          <tr><td class="t-name">GenerateDebugInformation</td><td class="t-real">true</td><td class="t-desc">디버그 정보(.pdb) 생성</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- 2-6 Release 최적화 -->
+    <h3 id="release">2-6. Release에만 있는 최적화 옵션</h3>
+    <div class="code-block">
+      <div class="code-header"><span class="lang">XML</span> Release 최적화 옵션 <span class="filename">Client.vcxproj</span></div>
+<pre>&lt;<span class="tp">FunctionLevelLinking</span>&gt;<span class="str">true</span>&lt;/<span class="tp">FunctionLevelLinking</span>&gt;
+&lt;<span class="tp">IntrinsicFunctions</span>&gt;<span class="str">true</span>&lt;/<span class="tp">IntrinsicFunctions</span>&gt;
+&lt;<span class="tp">WholeProgramOptimization</span>&gt;<span class="str">true</span>&lt;/<span class="tp">WholeProgramOptimization</span>&gt;</pre>
+    </div>
+
+    <div class="type-table-wrap">
+      <table class="type-table">
+        <thead><tr><th>옵션</th><th>의미</th></tr></thead>
+        <tbody>
+          <tr><td class="t-name">FunctionLevelLinking</td><td class="t-desc">사용하지 않는 함수를 링커가 제거 가능</td></tr>
+          <tr><td class="t-name">IntrinsicFunctions</td><td class="t-desc"><code>memcpy</code> 등을 CPU 명령어로 직접 대체 (빠름)</td></tr>
+          <tr><td class="t-name">WholeProgramOptimization</td><td class="t-desc">전체 프로그램을 보고 최적화 (Link-Time Code Generation)</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="info-box">
+      <div class="info-label">왜 Debug에는 없나?</div>
+      최적화가 켜지면 컴파일러가 코드를 재배치/합치기 때문에, 디버거에서 <strong>한 줄씩 따라갈 수 없게</strong> 된다. 변수 값도 "최적화됨"으로 표시되어 확인 불가. Debug 빌드는 반드시 최적화 OFF.
+    </div>
+
+    <!-- 3. filters -->
+    <h2 id="filters">3. vcxproj.filters — 솔루션 탐색기</h2>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">XML</span> 필터(가상 폴더) 정의 <span class="filename">Client.vcxproj.filters</span></div>
+<pre>&lt;<span class="tp">Filter</span> <span class="fn">Include</span>=<span class="str">"Common"</span>&gt;...&lt;/<span class="tp">Filter</span>&gt;
+&lt;<span class="tp">Filter</span> <span class="fn">Include</span>=<span class="str">"Core"</span>&gt;...&lt;/<span class="tp">Filter</span>&gt;
+&lt;<span class="tp">Filter</span> <span class="fn">Include</span>=<span class="str">"Core\Memory"</span>&gt;...&lt;/<span class="tp">Filter</span>&gt;
+&lt;<span class="tp">Filter</span> <span class="fn">Include</span>=<span class="str">"Object"</span>&gt;...&lt;/<span class="tp">Filter</span>&gt;</pre>
+    </div>
+
+    <p>이건 <strong>VS 솔루션 탐색기에서 보이는 가상 폴더</strong>야. 실제 파일 시스템과 별개.</p>
+
+    <!-- filters vs 파일 시스템 시각화 -->
+    <div class="mem-scene fade-in">
+      <div class="mem-scene-title">솔루션 탐색기 (가상) vs 실제 파일 시스템</div>
+      <div class="compare-grid">
+        <div class="compare-item" style="border-color:#58a6ff44">
+          <div class="compare-label" style="color:var(--accent)">솔루션 탐색기 (가상)</div>
+          <div style="font-family:var(--font-code);font-size:11px;line-height:1.8;color:var(--text-secondary)">
+            Common/<br>
+            &nbsp;&nbsp;Info.h, Singleton.h<br>
+            Core/<br>
+            &nbsp;&nbsp;Defines.h, Object.h/cpp<br>
+            &nbsp;&nbsp;<strong style="color:var(--accent)">Memory/</strong><br>
+            &nbsp;&nbsp;&nbsp;&nbsp;MemoryPool, ObjectPool,<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;SegmentPool<br>
+            Object/<br>
+            &nbsp;&nbsp;TestObject.h/cpp
+          </div>
+        </div>
+        <div class="compare-item" style="border-color:#3fb95044">
+          <div class="compare-label" style="color:var(--accent-green)">실제 파일 시스템</div>
+          <div style="font-family:var(--font-code);font-size:11px;line-height:1.8;color:var(--text-secondary)">
+            Common/<br>
+            &nbsp;&nbsp;Info.h, Singleton.h<br>
+            Core/<br>
+            &nbsp;&nbsp;Defines.h, Object.h/cpp<br>
+            &nbsp;&nbsp;MemoryPool, ObjectPool,<br>
+            &nbsp;&nbsp;SegmentPool<br>
+            <span style="color:var(--accent-green)">← Memory/ 폴더 없음!</span><br>
+            Object/<br>
+            &nbsp;&nbsp;TestObject.h/cpp
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <p>차이점: <strong>Core/Memory</strong> 필터는 솔루션 탐색기에서만 존재. 실제 파일 시스템에서는 <code>Core/</code> 바로 아래에 있어. 풀 관련 파일을 시각적으로 묶어서 보기 편하게 한 거.</p>
+
+    <!-- Prev / Next -->
+    <div class="page-nav" id="page-nav"></div>
+
+  <script>
+  var PAGE_ID = "0003_04";
+  var ON_THIS_PAGE = [
+    { id: "roles", label: "파일 3개의 역할" },
+    { id: "slnx", label: "1. slnx 솔루션" },
+    { id: "vcxproj", label: "2. vcxproj 빌드 설정" },
+    { id: "preprocessor", label: "전처리기 매크로" },
+    { id: "cpp20", label: "C++20 설정" },
+    { id: "include", label: "추가 포함 디렉토리" },
+    { id: "outdir", label: "출력 디렉토리" },
+    { id: "common", label: "공통 설정" },
+    { id: "release", label: "Release 최적화" },
+    { id: "filters", label: "3. filters 가상 폴더" },
+  ];
+  </script>
+  <script src="nav.js"></script>
+  </main>
+</body>
+</html>

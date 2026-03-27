@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>상수 버퍼 — CPU→GPU 행렬 전달 | DX11 노트</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <header class="header">
+    <button class="hamburger" id="hamburger" aria-label="메뉴 열기">
+      <span></span><span></span><span></span>
+    </button>
+    <div class="header-logo">
+      <a href="index.html" style="color:inherit;text-decoration:none">DX11 NOTE</a>
+      <span class="subtitle">Deep Dive</span>
+    </div>
+    <button class="theme-toggle" id="themeToggle" aria-label="테마 전환">
+      <span class="theme-toggle-icon"></span>
+    </button>
+  </header>
+
+  <div class="sidebar-overlay" id="sidebarOverlay"></div>
+  <nav class="sidebar" id="sidebar"></nav>
+
+  <main class="main-content content">
+    <div class="page-title fade-in">
+      <span class="tag tag-detail">DEEP DIVE</span>
+      <h1>상수 버퍼<br>CPU에서 GPU로 행렬 전달</h1>
+      <p class="page-desc">정점 버퍼가 "꼭짓점"을 보내는 거라면, 상수 버퍼는 "매 프레임 변하는 공통 데이터(행렬, 색상)"를 보내는 것.</p>
+    </div>
+
+    <!-- 정점 vs 상수 -->
+    <h2 id="what">상수 버퍼가 뭔가?</h2>
+
+    <div class="type-table-wrap fade-in">
+      <table class="type-table">
+        <thead><tr><th></th><th>정점 버퍼 (Day06)</th><th>상수 버퍼 (Day07)</th></tr></thead>
+        <tbody>
+          <tr><td class="t-name">담는 것</td><td class="t-desc">꼭짓점 (위치, 색)</td><td class="t-desc">프레임 공통 (행렬, 조명)</td></tr>
+          <tr><td class="t-name">갱신</td><td class="t-desc">보통 한 번 (Init)</td><td class="t-desc" style="color:var(--accent-orange)">매 프레임</td></tr>
+          <tr><td class="t-name">적용</td><td class="t-desc">정점마다 다름</td><td class="t-desc" style="color:var(--accent-green)">모든 정점/픽셀에 동일</td></tr>
+          <tr><td class="t-name">Usage</td><td class="t-real">DEFAULT</td><td class="t-real">DYNAMIC</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- CPU↔GPU 구조체 -->
+    <h2 id="data">CPU ↔ GPU 구조체</h2>
+
+    <div class="compare-grid">
+      <div class="compare-item" style="border-color:#58a6ff44">
+        <div class="compare-label" style="color:var(--accent)">C++ (CPU)</div>
+        <div style="font-family:var(--font-code);font-size:10px;color:var(--text-secondary);line-height:1.8">
+          struct FTransformCBufferData {<br>
+          &nbsp;&nbsp;FMatrix _world;<br>
+          &nbsp;&nbsp;FMatrix _view;<br>
+          &nbsp;&nbsp;FMatrix _proj;<br>
+          &nbsp;&nbsp;FMatrix _wv;<br>
+          &nbsp;&nbsp;FMatrix _wvp;<br>
+          }; <span style="color:var(--text-muted)">// 320B</span>
+        </div>
+      </div>
+      <div class="compare-item" style="border-color:#3fb95044">
+        <div class="compare-label" style="color:var(--accent-green)">HLSL (GPU)</div>
+        <div style="font-family:var(--font-code);font-size:10px;color:var(--text-secondary);line-height:1.8">
+          cbuffer Transform : register(b0) {<br>
+          &nbsp;&nbsp;matrix gWorld;<br>
+          &nbsp;&nbsp;matrix gView;<br>
+          &nbsp;&nbsp;matrix gProj;<br>
+          &nbsp;&nbsp;matrix gWV;<br>
+          &nbsp;&nbsp;matrix gWVP;<br>
+          } <span style="color:var(--text-muted)">// 순서+크기 일치 필수!</span>
+        </div>
+      </div>
+    </div>
+
+    <p><code>register(b0)</code> — 상수 버퍼 슬롯 0번. 여러 개 쓸 때 <code>b0</code>, <code>b1</code>으로 구분.</p>
+
+    <!-- CBuffer Create -->
+    <h2 id="create">CBuffer::Create — GPU 버퍼 생성</h2>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> <span class="filename">Shader/CBuffer.cpp</span></div>
+<pre><span class="tp">bool</span> <span class="tp">CBuffer</span>::<span class="fn">Create</span>(<span class="tp">int</span> size, <span class="tp">int</span> regi, <span class="tp">int</span> type)
+{
+    _size = size;
+    _register = regi;
+    _type = type;
+
+    <span class="tp">D3D11_BUFFER_DESC</span> desc = {};
+
+    <span class="cm">//상수버퍼는 정보 갱신이 자주 일어날수가 있어서</span>
+    <span class="cm">//D3D11_USAGE_DYNAMIC 로 만들어 준다.</span>
+    desc.Usage = <span class="mc">D3D11_USAGE_DYNAMIC</span>;
+    desc.ByteWidth = _size;
+    desc.BindFlags = <span class="mc">D3D11_BIND_CONSTANT_BUFFER</span>;
+    desc.CPUAccessFlags = <span class="mc">D3D11_CPU_ACCESS_WRITE</span>;
+
+    <span class="kw">if</span> (<span class="fn">FAILED</span>(<span class="tp">Device</span>::<span class="fn">Instance</span>().<span class="fn">GetDevice</span>()-&gt;<span class="fn">CreateBuffer</span>(&amp;desc, <span class="kw">nullptr</span>, _buffer.<span class="fn">GetAddressOf</span>())))
+        <span class="kw">return</span> <span class="kw">false</span>;
+
+    <span class="kw">return</span> <span class="kw">true</span>;
+}</pre>
+    </div>
+
+    <!-- SetData Map/Unmap -->
+    <h2 id="setdata">SetData — Map/Unmap 패턴</h2>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> <span class="filename">Shader/CBuffer.cpp</span></div>
+<pre><span class="tp">void</span> <span class="tp">CBuffer</span>::<span class="fn">SetData</span>(<span class="tp">void</span>* data)
+{
+    <span class="tp">D3D11_MAPPED_SUBRESOURCE</span> map = {};
+
+    <span class="cm">//GPU리소스에 CPU가 접근 할 수 있도록 포인터를 얻어오는 함수</span>
+    <span class="mc">CONTEXT</span>-&gt;<span class="fn">Map</span>(_buffer.<span class="fn">Get</span>(), <span class="num">0</span>, <span class="mc">D3D11_MAP_WRITE_DISCARD</span>, <span class="num">0</span>, &amp;map);
+
+    <span class="fn">memcpy</span>(map.pData, data, _size);
+
+    <span class="cm">//해제 시켜줘야 함.</span>
+    <span class="mc">CONTEXT</span>-&gt;<span class="fn">Unmap</span>(_buffer.<span class="fn">Get</span>(), <span class="num">0</span>);
+
+    <span class="kw">if</span> (_type &amp; <span class="mc">SHADER_TYPE</span>::Vertex)
+        <span class="mc">CONTEXT</span>-&gt;<span class="fn">VSSetConstantBuffers</span>(_register, <span class="num">1</span>, _buffer.<span class="fn">GetAddressOf</span>());
+    <span class="kw">if</span> (_type &amp; <span class="mc">SHADER_TYPE</span>::Pixel)
+        <span class="mc">CONTEXT</span>-&gt;<span class="fn">PSSetConstantBuffers</span>(_register, <span class="num">1</span>, _buffer.<span class="fn">GetAddressOf</span>());
+}</pre>
+    </div>
+
+    <div class="mem-steps fade-in">
+      <div class="mem-step"><div class="mem-step-num">1</div><div class="mem-step-text"><code>Map()</code> — GPU 메모리에 CPU가 쓸 수 있는 포인터 획득 (잠금)</div></div>
+      <div class="mem-step"><div class="mem-step-num">2</div><div class="mem-step-text"><code>memcpy</code> — 데이터 복사 (320바이트)</div></div>
+      <div class="mem-step"><div class="mem-step-num">3</div><div class="mem-step-text"><code>Unmap()</code> — 잠금 해제 → GPU 사용 가능</div></div>
+      <div class="mem-step"><div class="mem-step-num">4</div><div class="mem-step-text"><code>VSSetConstantBuffers</code> — 셰이더 단계에 바인딩</div></div>
+    </div>
+
+    <!-- SHADER_TYPE -->
+    <h2 id="shadertype">SHADER_TYPE — 비트 플래그</h2>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> <span class="filename">Common/Info.h</span></div>
+<pre><span class="kw">namespace</span> <span class="mc">SHADER_TYPE</span>
+{
+    <span class="kw">enum</span> <span class="tp">eType</span>
+    {
+        Vertex = <span class="num">0x1</span>,
+        Pixel = <span class="num">0x2</span>,
+        Graphic = Vertex | Pixel
+    };
+}</pre>
+    </div>
+    <p><code>Graphic</code>이면 VS와 PS <strong>둘 다</strong>에 바인딩.</p>
+
+    <!-- Update + Transpose -->
+    <h2 id="update">TranformCBuffer::Update() — 행렬 곱 + Transpose</h2>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> <span class="filename">Shader/TranformCBuffer.cpp</span></div>
+<pre><span class="tp">void</span> <span class="tp">TranformCBuffer</span>::<span class="fn">Update</span>()
+{
+    _data._wv = _data._world * _data._view;
+    _data._wvp = _data._wv * _data._proj;
+
+    _data._world.<span class="fn">Transpose</span>();
+    _data._view.<span class="fn">Transpose</span>();
+    _data._proj.<span class="fn">Transpose</span>();
+    _data._wv.<span class="fn">Transpose</span>();
+    _data._wvp.<span class="fn">Transpose</span>();
+
+    <span class="fn">SetData</span>(&amp;_data);
+}</pre>
+    </div>
+
+    <!-- Transpose 왜 -->
+    <h3>왜 Transpose가 필요한가?</h3>
+
+    <div class="compare-grid">
+      <div class="compare-item bad">
+        <div class="compare-label">Transpose 안 하면</div>
+        <div style="font-family:var(--font-code);font-size:10px;color:var(--text-secondary);line-height:1.6">
+          C++ (row-major):<br>
+          1 0 0 0<br>
+          0 1 0 0<br>
+          0 0 1 0<br>
+          <strong style="color:var(--accent-red)">x y z</strong> 1<br><br>
+          HLSL이 column-major로 읽음:<br>
+          이동값이 <strong style="color:var(--accent-red)">엉뚱한 위치</strong>에!
+        </div>
+      </div>
+      <div class="compare-item good">
+        <div class="compare-label">미리 Transpose</div>
+        <div style="font-family:var(--font-code);font-size:10px;color:var(--text-secondary);line-height:1.6">
+          Transpose 후 전송:<br>
+          1 0 0 <strong style="color:var(--accent-green)">x</strong><br>
+          0 1 0 <strong style="color:var(--accent-green)">y</strong><br>
+          0 0 1 <strong style="color:var(--accent-green)">z</strong><br>
+          0 0 0 1<br><br>
+          HLSL이 column-major로 읽으면<br>
+          → <strong style="color:var(--accent-green)">원래 의도한 행렬!</strong>
+        </div>
+      </div>
+    </div>
+
+    <div class="info-box">
+      <div class="info-label">row-major vs column-major</div>
+      <strong>C++</strong>: 행(row) 단위로 메모리에 저장.<br>
+      <strong>HLSL</strong>: 열(column) 단위로 읽음.<br>
+      그래서 보내기 전에 Transpose해서 "GPU가 읽었을 때 원래 의도한 행렬이 되도록" 맞춤.
+    </div>
+
+    <!-- HLSL에서 사용 -->
+    <h2 id="hlsl">HLSL에서 사용 — mul(Pos, gWVP)</h2>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">HLSL</span> <span class="filename">HLSL/ColorMesh.fx</span></div>
+<pre>output.Pos = <span class="fn">mul</span>(<span class="fn">float4</span>(input.Pos, <span class="num">1.f</span>), gWVP);</pre>
+    </div>
+
+    <p><code>gWVP</code> = World × View × Projection. 로컬 좌표 → 화면 좌표 한 번에 변환.</p>
+
+    <!-- CBuffer 클래스 선언 -->
+    <h2 id="cbufferclass">CBuffer 클래스 선언</h2>
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> <span class="filename">Shader/CBuffer.h</span></div>
+<pre><span class="kw">class</span> <span class="tp">CBuffer</span> : <span class="kw">public</span> <span class="tp">Object</span>
+{
+<span class="kw">protected</span>:
+    <span class="tp">ComPtr</span>&lt;<span class="tp">ID3D11Buffer</span>&gt; _buffer = <span class="kw">nullptr</span>;
+    <span class="tp">int</span> _size = <span class="num">0</span>;
+    <span class="tp">int</span> _register = <span class="num">0</span>;
+    <span class="tp">int</span> _type = <span class="num">0</span>;
+
+<span class="kw">public</span>:
+    <span class="tp">bool</span> <span class="fn">Create</span>(<span class="tp">int</span> size, <span class="tp">int</span> regi, <span class="tp">int</span> type);
+    <span class="tp">void</span> <span class="fn">SetData</span>(<span class="tp">void</span>* data);
+
+    <span class="kw">virtual</span> <span class="tp">void</span> <span class="fn">Update</span>() = <span class="num">0</span>;
+    <span class="kw">virtual</span> <span class="tp">void</span> <span class="fn">Destroy</span>() <span class="kw">override</span>;
+};</pre>
+    </div>
+
+    <!-- ShaderManager CBuffer 관리 -->
+    <h2 id="manager">ShaderManager — CBuffer 관리</h2>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> FindCBuffer + CreateCBuffer <span class="filename">Shader/ShaderManager.h</span></div>
+<pre><span class="tp">std::unordered_map</span>&lt;<span class="tp">std::string</span>, <span class="tp">Ptr</span>&lt;<span class="tp">CBuffer</span>&gt;&gt; _cBuffers;
+
+<span class="kw">template</span>&lt;<span class="kw">typename</span> <span class="tp">T</span>&gt;
+<span class="tp">Ptr</span>&lt;<span class="tp">T</span>&gt; <span class="fn">FindCBuffer</span>(<span class="kw">const</span> <span class="tp">std::string</span>&amp; name)
+{
+    <span class="kw">auto</span> it = _cBuffers.<span class="fn">find</span>(name);
+    <span class="kw">if</span> (_cBuffers.<span class="fn">end</span>() == it)
+        <span class="kw">return</span> <span class="kw">nullptr</span>;
+
+    <span class="kw">return</span> <span class="fn">Cast</span>&lt;<span class="tp">CBuffer</span>, <span class="tp">T</span>&gt;(it-&gt;second);
+}
+
+<span class="kw">template</span>&lt;<span class="kw">typename</span> <span class="tp">T</span>&gt;
+<span class="tp">bool</span> <span class="fn">CreateCBuffer</span>(<span class="kw">const</span> <span class="tp">std::string</span>&amp; name, <span class="tp">int</span> size, <span class="tp">int</span> regi, <span class="tp">int</span> type)
+{
+    <span class="tp">Ptr</span>&lt;<span class="tp">T</span>&gt; cbuffer = <span class="fn">FindCBuffer</span>&lt;<span class="tp">T</span>&gt;(name);
+    <span class="kw">if</span> (cbuffer)
+        <span class="kw">return</span> <span class="kw">false</span>;
+
+    cbuffer = <span class="fn">New</span>&lt;<span class="tp">T</span>&gt;();
+    <span class="kw">if</span> (<span class="kw">false</span> == cbuffer-&gt;<span class="fn">Create</span>(size, regi, type))
+    {
+        <span class="fn">Delete</span>(cbuffer);
+        <span class="kw">return</span> <span class="kw">false</span>;
+    }
+
+    _cBuffers[name] = cbuffer;
+}</pre>
+    </div>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> Init — Transform CBuffer 생성 <span class="filename">Shader/ShaderManager.cpp</span></div>
+<pre><span class="kw">if</span> (<span class="kw">false</span> == <span class="fn">CreateCBuffer</span>&lt;<span class="tp">TranformCBuffer</span>&gt;(<span class="str">"Transform"</span>, <span class="kw">sizeof</span>(<span class="tp">FTransformCBufferData</span>), <span class="num">0</span>, <span class="mc">SHADER_TYPE</span>::Vertex))
+{
+    <span class="tp">LogManager</span>::<span class="fn">Instance</span>().<span class="fn">Debug</span>(<span class="str">"CreateCBuffer&lt;TranformCBuffer&gt; Error"</span>);
+    <span class="kw">return</span> <span class="kw">false</span>;
+}</pre>
+    </div>
+
+    <p><code>register(b0)</code> = <code>regi=0</code>, <code>SHADER_TYPE::Vertex</code> = VS에만 바인딩.</p>
+
+    <!-- 데이터 흐름 -->
+    <h2 id="dataflow">데이터 흐름</h2>
+
+    <div class="flow-diagram fade-in"><span class="flow-fn">GameEngine::Render</span>()
+  <span class="flow-arrow">│</span> buffer-&gt;SetWorldMatrix(mW)
+  <span class="flow-arrow">│</span> buffer-&gt;SetProjMatrix(mP)
+  <span class="flow-arrow">▼</span>
+<span class="flow-fn">TranformCBuffer::Update</span>()
+  <span class="flow-arrow">│</span> _wv = _world * _view
+  <span class="flow-arrow">│</span> _wvp = _wv * _proj
+  <span class="flow-arrow">│</span> 전부 Transpose()
+  <span class="flow-arrow">▼</span>
+<span class="flow-fn">CBuffer::SetData</span>(&amp;_data)
+  <span class="flow-arrow">│</span> Map → memcpy(320B) → Unmap
+  <span class="flow-arrow">│</span> VSSetConstantBuffers(register=0)
+  <span class="flow-arrow">▼</span>
+<span class="flow-highlight">HLSL cbuffer Transform : register(b0)</span>
+  <span class="flow-arrow">│</span> gWVP 사용 가능
+  <span class="flow-arrow">▼</span>
+<span class="flow-fn">ColorMeshVS</span>: output.Pos = <span class="flow-fn">mul</span>(float4(Pos, 1.f), <span class="flow-highlight">gWVP</span>)</div>
+
+    <!-- CPU→GPU 전송 시각화 -->
+    <h2 id="transfer">CPU→GPU 전송 시뮬레이션</h2>
+    <p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">"Update" 버튼을 누르면 Map→memcpy→Unmap→Bind 과정이 단계별로 진행돼.</p>
+
+    <div class="mem-scene" id="transferScene">
+      <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:12px;align-items:start">
+        <!-- CPU -->
+        <div>
+          <div style="font-family:var(--font-heading);font-size:10px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">CPU (RAM)</div>
+          <div id="cpuBlocks" style="display:flex;flex-direction:column;gap:3px">
+            <div class="mem-cell used" style="min-width:100%;height:24px;font-size:9px;justify-content:flex-start;padding-left:8px" data-field="_world">_world (64B)</div>
+            <div class="mem-cell used" style="min-width:100%;height:24px;font-size:9px;justify-content:flex-start;padding-left:8px" data-field="_view">_view (64B)</div>
+            <div class="mem-cell used" style="min-width:100%;height:24px;font-size:9px;justify-content:flex-start;padding-left:8px" data-field="_proj">_proj (64B)</div>
+            <div class="mem-cell used" style="min-width:100%;height:24px;font-size:9px;justify-content:flex-start;padding-left:8px" data-field="_wv">_wv (64B)</div>
+            <div class="mem-cell used" style="min-width:100%;height:24px;font-size:9px;justify-content:flex-start;padding-left:8px" data-field="_wvp">_wvp (64B)</div>
+          </div>
+          <div style="font-family:var(--font-code);font-size:9px;color:var(--text-muted);margin-top:4px">FTransformCBufferData (320B)</div>
+        </div>
+
+        <!-- Arrow -->
+        <div id="transferArrow" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding-top:30px;min-width:60px">
+          <div id="arrowLine" style="width:40px;height:3px;background:var(--border);border-radius:2px;transition:all 0.3s"></div>
+          <div id="arrowLabel" style="font-family:var(--font-code);font-size:8px;color:var(--text-muted);transition:color 0.3s">대기</div>
+        </div>
+
+        <!-- GPU -->
+        <div>
+          <div style="font-family:var(--font-heading);font-size:10px;font-weight:700;color:var(--accent-green);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">GPU (VRAM)</div>
+          <div id="gpuBlocks" style="display:flex;flex-direction:column;gap:3px">
+            <div class="mem-cell free" style="min-width:100%;height:24px;font-size:9px;justify-content:flex-start;padding-left:8px" data-field="gWorld">gWorld</div>
+            <div class="mem-cell free" style="min-width:100%;height:24px;font-size:9px;justify-content:flex-start;padding-left:8px" data-field="gView">gView</div>
+            <div class="mem-cell free" style="min-width:100%;height:24px;font-size:9px;justify-content:flex-start;padding-left:8px" data-field="gProj">gProj</div>
+            <div class="mem-cell free" style="min-width:100%;height:24px;font-size:9px;justify-content:flex-start;padding-left:8px" data-field="gWV">gWV</div>
+            <div class="mem-cell free" style="min-width:100%;height:24px;font-size:9px;justify-content:flex-start;padding-left:8px" data-field="gWVP">gWVP</div>
+          </div>
+          <div style="font-family:var(--font-code);font-size:9px;color:var(--text-muted);margin-top:4px">cbuffer Transform : register(b0)</div>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:8px;margin-top:14px;align-items:center">
+        <button class="mem-sim-btn" id="transferBtn" style="font-size:10px;padding:5px 14px">▶ Update()</button>
+        <button class="mem-sim-btn" id="transferReset" style="font-size:10px;padding:5px 14px">Reset</button>
+        <div id="transferStatus" style="font-family:var(--font-code);font-size:10px;color:var(--text-secondary);margin-left:8px">준비</div>
+      </div>
+    </div>
+
+    <div class="page-nav" id="page-nav"></div>
+
+  <script>
+  var PAGE_ID = "0007_03";
+  var ON_THIS_PAGE = [
+    { id: "what", label: "상수 버퍼란?" },
+    { id: "data", label: "CPU ↔ GPU 구조체" },
+    { id: "create", label: "CBuffer::Create" },
+    { id: "setdata", label: "Map/Unmap 패턴" },
+    { id: "shadertype", label: "SHADER_TYPE" },
+    { id: "update", label: "Update + Transpose" },
+    { id: "hlsl", label: "HLSL mul(gWVP)" },
+    { id: "cbufferclass", label: "CBuffer 클래스" },
+    { id: "manager", label: "ShaderManager CBuffer" },
+    { id: "dataflow", label: "데이터 흐름" },
+    { id: "transfer", label: "전송 시뮬레이션" },
+  ];
+  </script>
+  <script src="nav.js"></script>
+
+  <!-- CPU→GPU 전송 시뮬레이션 -->
+  <script>
+  (function(){
+    var btn = document.getElementById('transferBtn');
+    var resetBtn = document.getElementById('transferReset');
+    var status = document.getElementById('transferStatus');
+    var arrowLine = document.getElementById('arrowLine');
+    var arrowLabel = document.getElementById('arrowLabel');
+    var cpuBlocks = document.querySelectorAll('#cpuBlocks .mem-cell');
+    var gpuBlocks = document.querySelectorAll('#gpuBlocks .mem-cell');
+    if (!btn) return;
+
+    var steps = [
+      {label: '행렬 곱 계산 (WV = W×V, WVP = WV×P)', arrow: '계산 중', color: 'var(--accent-orange)', cpu: [3,4], gpu: []},
+      {label: 'Transpose() — 5개 행렬 전부 전치', arrow: 'Transpose', color: 'var(--accent-orange)', cpu: [0,1,2,3,4], gpu: []},
+      {label: 'Map() — GPU 메모리 잠금 + CPU 쓰기 포인터 획득', arrow: 'Map()', color: 'var(--accent)', cpu: [], gpu: []},
+      {label: 'memcpy(320B) — 데이터 복사', arrow: 'memcpy →', color: 'var(--accent-green)', cpu: [0,1,2,3,4], gpu: [0,1,2,3,4]},
+      {label: 'Unmap() — 잠금 해제', arrow: 'Unmap()', color: 'var(--accent)', cpu: [], gpu: [0,1,2,3,4]},
+      {label: 'VSSetConstantBuffers(b0) — 셰이더에 바인딩 완료!', arrow: 'Bind ✓', color: 'var(--accent-green)', cpu: [], gpu: [0,1,2,3,4]},
+    ];
+
+    var currentStep = -1;
+    var running = false;
+
+    function resetAll() {
+      currentStep = -1;
+      running = false;
+      status.textContent = '준비';
+      arrowLine.style.background = 'var(--border)';
+      arrowLabel.textContent = '대기';
+      arrowLabel.style.color = 'var(--text-muted)';
+      cpuBlocks.forEach(function(b) { b.className = 'mem-cell used'; b.style.borderColor = ''; });
+      gpuBlocks.forEach(function(b) { b.className = 'mem-cell free'; b.style.borderColor = ''; });
+    }
+
+    function runStep() {
+      currentStep++;
+      if (currentStep >= steps.length) {
+        running = false;
+        status.textContent = '완료! GPU에서 gWVP 사용 가능';
+        return;
+      }
+
+      var step = steps[currentStep];
+      status.textContent = 'Step ' + (currentStep+1) + '/' + steps.length + ': ' + step.label;
+      arrowLabel.textContent = step.arrow;
+      arrowLabel.style.color = step.color;
+      arrowLine.style.background = step.color;
+
+      // Highlight CPU blocks
+      cpuBlocks.forEach(function(b, i) {
+        if (step.cpu.indexOf(i) >= 0) {
+          b.style.borderColor = step.color;
+        } else {
+          b.style.borderColor = '';
+        }
+      });
+
+      // Fill GPU blocks
+      gpuBlocks.forEach(function(b, i) {
+        if (step.gpu.indexOf(i) >= 0) {
+          b.className = 'mem-cell rent';
+        }
+      });
+
+      setTimeout(runStep, 800);
+    }
+
+    btn.addEventListener('click', function() {
+      if (running) return;
+      resetAll();
+      running = true;
+      setTimeout(runStep, 300);
+    });
+
+    resetBtn.addEventListener('click', resetAll);
+  })();
+  </script>
+  </main>
+</body>
+</html>

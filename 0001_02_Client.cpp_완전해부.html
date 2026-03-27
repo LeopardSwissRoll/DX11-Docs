@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Client.cpp 완전 해부 | DX11 노트</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Header -->
+  <header class="header">
+    <button class="hamburger" id="hamburger" aria-label="메뉴 열기">
+      <span></span><span></span><span></span>
+    </button>
+    <div class="header-logo">
+      <a href="index.html" style="color:inherit;text-decoration:none">DX11 NOTE</a>
+      <span class="subtitle">Deep Dive</span>
+    </div>
+    <button class="theme-toggle" id="themeToggle" aria-label="테마 전환">
+      <span class="theme-toggle-icon"></span>
+    </button>
+  </header>
+
+  <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+  <!-- Sidebar -->
+  <nav class="sidebar" id="sidebar"></nav>
+
+  <!-- Main -->
+  <main class="main-content content">
+    <div class="page-title fade-in">
+      <span class="tag tag-detail">DEEP DIVE</span>
+      <h1>Client.cpp<br>완전 해부</h1>
+      <p class="page-desc">
+        이 코드가 왜 무서워 보이는 걸까? — Win32 API가 1990년대에 설계된 C 스타일 API라서 그래.
+        타입 이름이 대문자 덩어리고, 매크로가 난무하고, 함수 이름이 길어.
+        하지만 실제로 하는 일은 딱 하나 — <strong>빈 창 하나 띄우고 이벤트 기다리기</strong>.
+      </p>
+    </div>
+
+    <!-- 전체 흐름 -->
+    <h2 id="overview">전체 흐름</h2>
+
+    <div class="flow-diagram fade-in fade-in-d1"><span class="flow-highlight">프로그램 시작</span>
+  <span class="flow-arrow">│</span>
+  <span class="flow-arrow">▼</span>
+<span class="flow-fn">wWinMain()</span>              <span class="flow-desc">← main() 대신 이걸 씀</span>
+  <span class="flow-arrow">│</span>
+  <span class="flow-arrow">├─▶</span> <span class="flow-fn">MyRegisterClass()</span>  <span class="flow-desc">← "이런 창 만들 거야" (설계도 등록)</span>
+  <span class="flow-arrow">│</span>
+  <span class="flow-arrow">├─▶</span> <span class="flow-fn">InitInstance()</span>      <span class="flow-desc">← "진짜 만들어" (CreateWindowW)</span>
+  <span class="flow-arrow">│</span>
+  <span class="flow-arrow">└─▶</span> <span class="flow-highlight">무한루프 (게임루프)</span>
+        <span class="flow-arrow">├─</span> 이벤트 있음 → <span class="flow-fn">WndProc()</span>에서 처리
+        <span class="flow-arrow">└─</span> 이벤트 없음 → <span class="flow-highlight">게임 로직 (아직 비어있음)</span></div>
+
+    <!-- Part 1 -->
+    <h2 id="part1">Part 1 — 헤더와 전역 변수</h2>
+    <p>파일 상단의 <code>#include</code>와 전역 변수들.</p>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> 헤더 & 디버그 매크로 <span class="filename">Client.cpp:1-17</span></div>
+<pre><span class="pp">#include</span> <span class="str">"framework.h"</span>     <span class="cm">// Windows API 기본 헤더 모음</span>
+<span class="pp">#include</span> <span class="str">"Client.h"</span>        <span class="cm">// Resource.h 포함 (메뉴, 아이콘 ID)</span>
+
+<span class="pp">#ifdef _DEBUG</span>
+<span class="pp">#include</span> &lt;<span class="str">crtdbg.h</span>&gt;
+<span class="pp">#define</span> <span class="kw">new</span> <span class="kw">new</span>(<span class="mc">_NORMAL_BLOCK</span>, <span class="mc">__FILE__</span>, <span class="mc">__LINE</span>)
+<span class="pp">#endif</span>                        <span class="cm">// ↑ 디버그 모드에서 메모리 누수 추적. 지금은 무시.</span>
+
+<span class="tp">HINSTANCE</span> hInst;               <span class="cm">// "이 프로그램 자체"의 ID (핸들)</span>
+<span class="tp">WCHAR</span>     szTitle[<span class="num">100</span>];       <span class="cm">// 창 제목 문자열</span>
+<span class="tp">WCHAR</span>     szWindowClass[<span class="num">100</span>]; <span class="cm">// 창 클래스 이름 (OS 구분용)</span></pre>
+    </div>
+
+    <div class="info-box">
+      <div class="info-label">HINSTANCE가 뭔데?</div>
+      Windows에서 실행 중인 프로그램(프로세스)을 구분하는 ID.<br>
+      메모장을 2개 열면 각각 다른 HINSTANCE를 가진다.<br>
+      <strong>H</strong> = Handle (핸들), <strong>INSTANCE</strong> = 실행된 프로그램 하나.
+    </div>
+
+    <!-- Part 2 -->
+    <h2 id="part2">Part 2 — wWinMain (진입점)</h2>
+    <p>이건 그냥 <code>main()</code> 함수! Windows GUI 프로그램에서는 <code>main()</code> 대신 <code>wWinMain()</code>을 쓰는 것뿐.</p>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> 진입점 함수 시그니처 <span class="filename">Client.cpp:26-29</span></div>
+<pre><span class="tp">int</span> <span class="mc">APIENTRY</span> <span class="fn">wWinMain</span>(
+    <span class="mc">_In_</span>     <span class="tp">HINSTANCE</span> hInstance,      <span class="cm">// ✅ 이 프로그램의 핸들 (계속 씀)</span>
+    <span class="mc">_In_opt_</span> <span class="tp">HINSTANCE</span> hPrevInstance,  <span class="cm">// ❌ 항상 NULL (16비트 잔재)</span>
+    <span class="mc">_In_</span>     <span class="tp">LPWSTR</span>    lpCmdLine,      <span class="cm">// ❌ 명령줄 인자 (안 씀)</span>
+    <span class="mc">_In_</span>     <span class="tp">int</span>       nCmdShow        <span class="cm">// ✅ 창 표시 방법</span>
+)</pre>
+    </div>
+
+    <div class="info-box">
+      <div class="info-label">SAL ANNOTATION</div>
+      <code>_In_</code>, <code>_In_opt_</code> 같은 건 <strong>SAL 어노테이션</strong>이라고 한다.
+      컴파일러에게 "이 매개변수는 입력용이야", "이건 선택적이야" 라고 힌트를 주는 건데,
+      <strong>실행에는 아무 영향 없다</strong>. 장식이라고 생각하면 됨.
+    </div>
+
+    <h3>안에서 하는 일</h3>
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> 초기화 흐름 <span class="filename">Client.cpp:37-45</span></div>
+<pre><span class="cm">// 1) 리소스 파일(.rc)에서 창 제목, 클래스 이름 문자열 로드</span>
+<span class="fn">LoadStringW</span>(hInstance, <span class="mc">IDS_APP_TITLE</span>, szTitle, <span class="mc">MAX_LOADSTRING</span>);
+<span class="fn">LoadStringW</span>(hInstance, <span class="mc">IDC_CLIENT</span>, szWindowClass, <span class="mc">MAX_LOADSTRING</span>);
+
+<span class="cm">// 2) 창 설계도 등록</span>
+<span class="fn">MyRegisterClass</span>(hInstance);
+
+<span class="cm">// 3) 창 만들기</span>
+<span class="kw">if</span> (!<span class="fn">InitInstance</span>(hInstance, nCmdShow))
+    <span class="kw">return</span> <span class="mc">FALSE</span>;</pre>
+    </div>
+
+    <p>결국: <strong>문자열 로드 → 설계도 등록 → 창 생성</strong>. 3줄로 요약 끝.</p>
+
+    <!-- Part 3 -->
+    <h2 id="part3">Part 3 — MyRegisterClass (설계도 등록)</h2>
+    <p><code>WNDCLASSEXW</code> 구조체에 창의 옵션을 채워서 OS에 등록하는 함수. 비유하면 <strong>건축 주문서 작성</strong>.</p>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> 창 설계도 <span class="filename">Client.cpp:111-131</span></div>
+<pre><span class="tp">WNDCLASSEXW</span> wcex;
+
+wcex.cbSize        = <span class="kw">sizeof</span>(<span class="tp">WNDCLASSEX</span>);       <span class="cm">// 구조체 크기</span>
+wcex.style         = <span class="mc">CS_HREDRAW</span> | <span class="mc">CS_VREDRAW</span>; <span class="cm">// 크기 바뀌면 다시 그려</span>
+wcex.lpfnWndProc   = <span class="fn">WndProc</span>;                 <span class="cm">// ★ 이벤트 처리 함수 (콜백)</span>
+wcex.hIcon         = <span class="fn">LoadIcon</span>(...);             <span class="cm">// 아이콘</span>
+wcex.hCursor       = <span class="fn">LoadCursor</span>(...);           <span class="cm">// 커서 (기본 화살표)</span>
+wcex.hbrBackground = (<span class="tp">HBRUSH</span>)(<span class="mc">COLOR_WINDOW</span>+<span class="num">1</span>); <span class="cm">// 배경색 (흰색)</span>
+wcex.lpszClassName = szWindowClass;             <span class="cm">// 클래스 이름</span>
+
+<span class="fn">RegisterClassExW</span>(&amp;wcex);  <span class="cm">// OS에 등록!</span></pre>
+    </div>
+
+    <div class="warn-box">
+      <div class="warn-label">CRITICAL — 가장 중요한 줄</div>
+      <code>wcex.lpfnWndProc = WndProc;</code><br>
+      "이 창에 무슨 일이 생기면 <strong>WndProc 함수를 불러줘</strong>"라고 OS에 알려주는 것.
+      <strong>함수 포인터(콜백)</strong>라는 개념인데, 이후 DX11 전체에서 아주 중요하게 쓰인다.
+    </div>
+
+    <!-- Part 4 -->
+    <h2 id="part4">Part 4 — InitInstance (창 생성)</h2>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> CreateWindowW 해부 <span class="filename">Client.cpp:158-159</span></div>
+<pre><span class="tp">HWND</span> hWnd = <span class="fn">CreateWindowW</span>(
+    szWindowClass,          <span class="cm">// 아까 등록한 설계도 이름</span>
+    szTitle,                <span class="cm">// 창 제목</span>
+    <span class="mc">WS_OVERLAPPEDWINDOW</span>,    <span class="cm">// 일반 창 스타일 (제목바+테두리+최소화/최대화)</span>
+    <span class="mc">CW_USEDEFAULT</span>, <span class="num">0</span>,       <span class="cm">// 위치: OS가 알아서</span>
+    <span class="mc">CW_USEDEFAULT</span>, <span class="num">0</span>,       <span class="cm">// 크기: OS가 알아서</span>
+    <span class="kw">nullptr</span>,                <span class="cm">// 부모 창: 없음</span>
+    <span class="kw">nullptr</span>,                <span class="cm">// 메뉴: 설계도에 있는 거 쓸게</span>
+    hInstance,              <span class="cm">// 이 프로그램의 핸들</span>
+    <span class="kw">nullptr</span>                 <span class="cm">// 추가 데이터: 없음</span>
+);
+
+<span class="fn">ShowWindow</span>(hWnd, nCmdShow);  <span class="cm">// 창을 화면에 보여줘</span>
+<span class="fn">UpdateWindow</span>(hWnd);          <span class="cm">// 한번 그려줘 (WM_PAINT 발생)</span></pre>
+    </div>
+
+    <div class="analogy-box">
+      <div class="analogy-header">
+        <span class="analogy-icon">🏗️</span>
+        <span class="analogy-title">ANALOGY — 커널 오브젝트와 핸들</span>
+      </div>
+      <div class="analogy-content">
+        Windows OS가 관리하는 것들(창, 파일, 프로세스 등)을 <strong>커널 오브젝트</strong>라고 해.<br>
+        직접 건드릴 수 없고, OS가 발급해준 <strong>ID(핸들)</strong>로만 조작할 수 있어.<br><br>
+        비유: 은행 계좌를 직접 만질 수 없고, <strong>계좌번호(핸들)</strong>로만 입출금하는 것과 같아.<br><br>
+        왜 <code>HWND</code>, <code>HPEN</code>, <code>HBRUSH</code>처럼 타입을 나눴냐면?<br>
+        숫자 자체론 구분이 안 되니까 <strong>타입으로 안전장치</strong>를 건 거야.<br>
+        (<code>HWND</code>에 <code>HPEN</code>을 실수로 넣는 걸 방지)
+      </div>
+    </div>
+
+    <!-- Part 5 -->
+    <h2 id="part5">Part 5 — 게임 루프</h2>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> PeekMessage 루프 <span class="filename">Client.cpp:75-98</span></div>
+<pre><span class="kw">while</span> (<span class="kw">true</span>)
+{
+    <span class="kw">if</span> (<span class="fn">PeekMessage</span>(&amp;msg, <span class="kw">nullptr</span>, <span class="num">0</span>, <span class="num">0</span>, <span class="mc">PM_REMOVE</span>))
+    {
+        <span class="kw">if</span> (msg.message == <span class="mc">WM_QUIT</span>)
+            <span class="kw">break</span>;
+
+        <span class="kw">if</span> (!<span class="fn">TranslateAccelerator</span>(msg.hwnd, hAccelTable, &amp;msg))
+        {
+            <span class="fn">TranslateMessage</span>(&amp;msg);  <span class="cm">// 키보드 → 문자 변환</span>
+            <span class="fn">DispatchMessage</span>(&amp;msg);   <span class="cm">// WndProc에 전달 ← 핵심!</span>
+        }
+    }
+    <span class="kw">else</span>
+    {
+        <span class="cm">// 윈도우 데드타임 → 게임 로직!</span>
+        <span class="cm">// Logic();</span>
+    }
+}</pre>
+    </div>
+
+    <div class="analogy-box">
+      <div class="analogy-header">
+        <span class="analogy-icon">🏪</span>
+        <span class="analogy-title">ANALOGY — 편의점 알바</span>
+      </div>
+      <div class="analogy-content">
+        <strong>너</strong> = 편의점 알바생 (프로그램)<br>
+        <strong>손님</strong> = 윈도우 메시지 (이벤트)<br><br>
+
+        <code>while (가게 문 열려있는 동안)</code><br>
+        &nbsp;&nbsp;<code>if (손님 왔나 확인 — PeekMessage)</code><br>
+        &nbsp;&nbsp;&nbsp;&nbsp;<code>if (사장님이 "닫아" 했으면 — WM_QUIT) → 퇴근</code><br>
+        &nbsp;&nbsp;&nbsp;&nbsp;<code>손님 응대 → DispatchMessage → WndProc 호출</code><br>
+        &nbsp;&nbsp;<code>else</code><br>
+        &nbsp;&nbsp;&nbsp;&nbsp;<code>손님 없으니까 진열대 정리 — 게임 로직!</code><br><br>
+
+        <strong>PeekMessage</strong> = 힐끗 보고 없으면 다른 일 함<br>
+        <strong>GetMessage</strong> = 손님 올 때까지 멍하니 기다림
+      </div>
+    </div>
+
+    <div class="info-box">
+      <div class="info-label">TranslateMessage / DispatchMessage</div>
+      <strong>TranslateMessage</strong> → 키보드 입력을 문자 메시지로 변환 (WM_KEYDOWN → WM_CHAR)<br>
+      <strong>DispatchMessage</strong> → 메시지를 <strong>WndProc 함수에 전달</strong> (이게 핵심!)
+    </div>
+
+    <!-- Part 6 -->
+    <h2 id="part6">Part 6 — WndProc (이벤트 처리기)</h2>
+    <p>이 함수는 <strong>네가 부르는 게 아니라 OS가 부르는 함수</strong>(콜백).</p>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> WndProc 구조 <span class="filename">Client.cpp:189-235</span></div>
+<pre><span class="tp">LRESULT</span> <span class="mc">CALLBACK</span> <span class="fn">WndProc</span>(<span class="tp">HWND</span> hWnd, <span class="tp">UINT</span> message,
+                          <span class="tp">WPARAM</span> wParam, <span class="tp">LPARAM</span> lParam)
+{
+    <span class="kw">switch</span> (message)
+    {
+    <span class="kw">case</span> <span class="mc">WM_COMMAND</span>:   <span class="cm">// 메뉴 클릭</span>
+        <span class="cm">// IDM_ABOUT → 정보 대화상자</span>
+        <span class="cm">// IDM_EXIT  → 창 파괴</span>
+        <span class="kw">break</span>;
+
+    <span class="kw">case</span> <span class="mc">WM_PAINT</span>:     <span class="cm">// 창을 (다시) 그릴 때</span>
+        <span class="cm">// BeginPaint / EndPaint 사이에 그리기 (아직 비어있음)</span>
+        <span class="kw">break</span>;
+
+    <span class="kw">case</span> <span class="mc">WM_DESTROY</span>:   <span class="cm">// 창이 파괴될 때</span>
+        <span class="fn">PostQuitMessage</span>(<span class="num">0</span>); <span class="cm">// → WM_QUIT → 게임 루프 break</span>
+        <span class="kw">break</span>;
+
+    <span class="kw">default</span>:
+        <span class="kw">return</span> <span class="fn">DefWindowProc</span>(hWnd, message, wParam, lParam);
+    }
+}</pre>
+    </div>
+
+    <div class="warn-box">
+      <div class="warn-label">WM_DESTROY vs WM_QUIT</div>
+      <strong>WM_DESTROY</strong> = "창이 파괴되고 있다" (이벤트)<br>
+      <strong>WM_QUIT</strong> = "프로그램을 종료해라" (명령)<br><br>
+      X 버튼 클릭 → <code>WM_DESTROY</code> 발생 → <code>PostQuitMessage()</code> 호출 → <code>WM_QUIT</code>이 메시지 큐에 들어감 → 게임 루프의 <code>break</code>에 도달
+    </div>
+
+    <!-- Type Table -->
+    <h2 id="typetable">Win32 타입 사전</h2>
+    <p>Win32에서 제일 무서운 게 타입 이름. 여기 정리해둘 테니 참고해.</p>
+
+    <div class="info-box" style="margin-bottom:16px">
+      <div class="info-label">NAMING RULE</div>
+      <strong>H</strong>로 시작하면 핸들 / <strong>LP</strong>로 시작하면 포인터 / <strong>W</strong>가 붙으면 유니코드 버전
+    </div>
+
+    <div class="type-table-wrap fade-in">
+      <table class="type-table">
+        <thead>
+          <tr>
+            <th>Win32 타입</th>
+            <th>실제 정체</th>
+            <th>의미</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="t-name">HINSTANCE</td>
+            <td class="t-real">void*</td>
+            <td class="t-desc">프로그램 핸들</td>
+          </tr>
+          <tr>
+            <td class="t-name">HWND</td>
+            <td class="t-real">void*</td>
+            <td class="t-desc">창(Window) 핸들</td>
+          </tr>
+          <tr>
+            <td class="t-name">UINT</td>
+            <td class="t-real">unsigned int</td>
+            <td class="t-desc">부호 없는 정수</td>
+          </tr>
+          <tr>
+            <td class="t-name">WPARAM</td>
+            <td class="t-real">unsigned __int64</td>
+            <td class="t-desc">메시지 부가 정보 1</td>
+          </tr>
+          <tr>
+            <td class="t-name">LPARAM</td>
+            <td class="t-real">__int64</td>
+            <td class="t-desc">메시지 부가 정보 2</td>
+          </tr>
+          <tr>
+            <td class="t-name">LRESULT</td>
+            <td class="t-real">__int64</td>
+            <td class="t-desc">함수 반환값</td>
+          </tr>
+          <tr>
+            <td class="t-name">BOOL</td>
+            <td class="t-real">int</td>
+            <td class="t-desc">0=FALSE, 그 외=TRUE</td>
+          </tr>
+          <tr>
+            <td class="t-name">WCHAR</td>
+            <td class="t-real">wchar_t</td>
+            <td class="t-desc">유니코드 문자 (2바이트)</td>
+          </tr>
+          <tr>
+            <td class="t-name">LPWSTR</td>
+            <td class="t-real">wchar_t*</td>
+            <td class="t-desc">유니코드 문자열 포인터</td>
+          </tr>
+          <tr>
+            <td class="t-name">ATOM</td>
+            <td class="t-real">unsigned short</td>
+            <td class="t-desc">RegisterClass 반환값</td>
+          </tr>
+          <tr>
+            <td class="t-name">HACCEL</td>
+            <td class="t-real">void*</td>
+            <td class="t-desc">단축키 테이블 핸들</td>
+          </tr>
+          <tr>
+            <td class="t-name">HDC</td>
+            <td class="t-real">void*</td>
+            <td class="t-desc">그리기 도구(Device Context) 핸들</td>
+          </tr>
+          <tr>
+            <td class="t-name">CALLBACK</td>
+            <td class="t-real">__stdcall</td>
+            <td class="t-desc">호출 규약 (OS가 부르는 함수 표시)</td>
+          </tr>
+          <tr>
+            <td class="t-name">APIENTRY</td>
+            <td class="t-real">__stdcall</td>
+            <td class="t-desc">CALLBACK이랑 같은 것</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Prev / Next -->
+    <div class="page-nav" id="page-nav"></div>
+  <script>
+  var PAGE_ID = "0001_02";
+  var ON_THIS_PAGE = [
+    { id: "overview", label: "전체 흐름" },
+    { id: "part1", label: "Part 1 — 헤더/전역" },
+    { id: "part2", label: "Part 2 — wWinMain" },
+    { id: "part3", label: "Part 3 — RegisterClass" },
+    { id: "part4", label: "Part 4 — InitInstance" },
+    { id: "part5", label: "Part 5 — 게임 루프" },
+    { id: "part6", label: "Part 6 — WndProc" },
+    { id: "typetable", label: "타입 사전" },
+  ];
+  </script>
+  <script src="nav.js"></script>
+  </main>
+
+</body>
+</html>

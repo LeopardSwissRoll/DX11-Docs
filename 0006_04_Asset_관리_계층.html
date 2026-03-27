@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Asset 관리 계층 | DX11 노트</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <header class="header">
+    <button class="hamburger" id="hamburger" aria-label="메뉴 열기">
+      <span></span><span></span><span></span>
+    </button>
+    <div class="header-logo">
+      <a href="index.html" style="color:inherit;text-decoration:none">DX11 NOTE</a>
+      <span class="subtitle">Deep Dive</span>
+    </div>
+    <button class="theme-toggle" id="themeToggle" aria-label="테마 전환">
+      <span class="theme-toggle-icon"></span>
+    </button>
+  </header>
+
+  <div class="sidebar-overlay" id="sidebarOverlay"></div>
+  <nav class="sidebar" id="sidebar"></nav>
+
+  <main class="main-content content">
+    <div class="page-title fade-in">
+      <span class="tag tag-detail">DEEP DIVE</span>
+      <h1>Asset 관리 계층<br>리소스를 체계적으로</h1>
+      <p class="page-desc">메시, 셰이더, 텍스처 등 게임 리소스를 관리하는 계층 구조: Asset → SubManager → AssetManager.</p>
+    </div>
+
+    <!-- 상속 구조 -->
+    <h2 id="hierarchy">상속 구조</h2>
+
+    <!-- arch-tree 스타일 (0004_05 재활용) -->
+    <style>
+      .arch-tree{display:flex;flex-direction:column;gap:8px;margin:16px 0}
+      .arch-node{display:inline-flex;align-items:center;gap:8px;padding:8px 14px;border-radius:6px;font-family:var(--font-code);font-size:12px;border:1px solid var(--border);background:var(--bg-card);transition:all .15s}
+      .arch-node:hover{border-color:var(--border-hover);background:var(--bg-card-hover)}
+      .arch-node.purple{border-color:var(--accent-purple);color:var(--accent-purple)}
+      .arch-node.blue{border-color:var(--accent);color:var(--accent)}
+      .arch-node.green{border-color:var(--accent-green);color:var(--accent-green)}
+      .arch-node.orange{border-color:var(--accent-orange);color:var(--accent-orange)}
+      .arch-node .node-label{font-family:var(--font-body);font-size:11px;color:var(--text-secondary)}
+      .arch-indent{margin-left:28px;position:relative}
+      .arch-indent::before{content:'';position:absolute;left:-16px;top:0;bottom:12px;width:1px;background:var(--border)}
+      .arch-connector{position:relative;padding-left:16px;margin:2px 0;font-size:11px;color:var(--text-muted)}
+      .arch-connector::before{content:'';position:absolute;left:0;top:50%;width:12px;height:1px;background:var(--border)}
+    </style>
+
+    <div class="arch-tree fade-in">
+      <div class="arch-node purple">Object <span class="node-label">— 게임 오브젝트 기본</span></div>
+      <div class="arch-indent">
+        <div class="arch-connector">상속</div>
+        <div class="arch-node blue">Asset <span class="node-label">— 이름으로 식별되는 에셋</span></div>
+        <div class="arch-indent">
+          <div class="arch-connector">상속</div>
+          <div class="arch-node green">Mesh <span class="node-label">— 정점/인덱스 버퍼</span></div>
+        </div>
+        <div class="arch-connector">상속</div>
+        <div class="arch-node orange">SubManager <span class="node-label">— 에셋 관리자 기본</span></div>
+        <div class="arch-indent">
+          <div class="arch-connector">상속</div>
+          <div class="arch-node green">MeshManager <span class="node-label">— Mesh들을 이름으로 관리</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="arch-tree" style="margin-top:16px">
+      <div class="arch-node purple">Singleton&lt;AssetManager&gt; <span class="node-label">— map&lt;eAssetType, SubManager&gt;</span></div>
+      <div class="arch-node purple" style="margin-top:6px">Singleton&lt;ShaderManager&gt; <span class="node-label">— map&lt;string, Shader&gt; (독립)</span></div>
+    </div>
+
+    <!-- Get<T> 호출 흐름 -->
+    <div class="mem-scene fade-in" style="margin-top:24px">
+      <div class="mem-scene-title">Get&lt;MeshManager&gt;() 호출 흐름</div>
+      <div class="mem-steps">
+        <div class="mem-step"><div class="mem-step-num">1</div><div class="mem-step-text"><code>GameEngine::Render()</code></div></div>
+        <div class="mem-step"><div class="mem-step-num">2</div><div class="mem-step-text"><code>AssetManager::Get&lt;MeshManager&gt;(eAssetType::Mesh)</code></div></div>
+        <div class="mem-step"><div class="mem-step-num">3</div><div class="mem-step-text"><code>_managers[Mesh]</code> → <code>Cast&lt;SubManager, MeshManager&gt;</code> (다운캐스팅)</div></div>
+        <div class="mem-step"><div class="mem-step-num">4</div><div class="mem-step-text"><code>MeshManager::FindMesh("Triangle")</code></div></div>
+        <div class="mem-step"><div class="mem-step-num">5</div><div class="mem-step-text"><code>_meshes["Triangle"]</code> → <code>Ptr&lt;Mesh&gt;</code> 반환</div></div>
+      </div>
+    </div>
+
+    <!-- Asset -->
+    <h2 id="asset">Asset — 에셋 기본 클래스</h2>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> <span class="filename">Core/Asset.h</span></div>
+<pre><span class="kw">class</span> <span class="tp">Asset</span> : <span class="kw">public</span> <span class="tp">Object</span>
+{
+<span class="kw">public</span>:
+    <span class="fn">Asset</span>();
+    <span class="kw">virtual</span> ~<span class="fn">Asset</span>();
+
+<span class="kw">protected</span>:
+    <span class="tp">std::string</span> _name;
+
+<span class="kw">public</span>:
+    <span class="tp">void</span> <span class="fn">SetName</span>(<span class="kw">const</span> <span class="tp">std::string</span>&amp; name) { _name = name; }
+    <span class="kw">const</span> <span class="tp">std::string</span>&amp; <span class="fn">GetName</span>() <span class="kw">const</span> { <span class="kw">return</span> _name; }
+};</pre>
+    </div>
+    <p>모든 에셋의 공통: <strong>이름으로 식별</strong>.</p>
+
+    <!-- SubManager -->
+    <h2 id="submanager">SubManager — 서브 매니저 기본</h2>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> <span class="filename">Core/SubManager.h</span></div>
+<pre><span class="kw">class</span> <span class="tp">SubManager</span> : <span class="kw">public</span> <span class="tp">Object</span>
+{
+<span class="kw">public</span>:
+    <span class="fn">SubManager</span>();
+    <span class="kw">virtual</span> ~<span class="fn">SubManager</span>();
+
+<span class="kw">public</span>:
+    <span class="kw">virtual</span> <span class="tp">bool</span> <span class="fn">Init</span>() { <span class="kw">return</span> <span class="kw">false</span>; }
+};</pre>
+    </div>
+    <p>기본 <code>Init()</code>이 <code>false</code> — 자식이 반드시 재정의해야 함.</p>
+
+    <!-- AssetManager -->
+    <h2 id="assetmanager">AssetManager — 서브 매니저들의 매니저</h2>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> RegisterManager + Get <span class="filename">Core/AssetManager.h</span></div>
+<pre><span class="kw">class</span> <span class="tp">AssetManager</span> : <span class="kw">public</span> <span class="tp">Singleton</span>&lt;<span class="tp">AssetManager</span>&gt;
+{
+<span class="kw">private</span>:
+    <span class="tp">std::map</span>&lt;<span class="tp">eAssetType</span>, <span class="tp">Ptr</span>&lt;<span class="kw">class</span> <span class="tp">SubManager</span>&gt;&gt; _managers;
+
+<span class="kw">public</span>:
+    <span class="tp">bool</span> <span class="fn">Init</span>();
+
+    <span class="kw">template</span>&lt;<span class="kw">typename</span> <span class="tp">T</span>&gt;
+    <span class="tp">Ptr</span>&lt;<span class="tp">T</span>&gt; <span class="fn">Get</span>(<span class="tp">eAssetType</span> type)
+    {
+        <span class="kw">if</span> (_managers.<span class="fn">end</span>() == _managers.<span class="fn">find</span>(type))
+            <span class="kw">return</span> <span class="kw">nullptr</span>;
+
+        <span class="kw">return</span> <span class="fn">Cast</span>&lt;<span class="tp">SubManager</span>, <span class="tp">T</span>&gt;(_managers[type]);
+    }
+
+    <span class="kw">template</span>&lt;<span class="kw">typename</span> <span class="tp">T</span>&gt;
+    <span class="tp">bool</span> <span class="fn">RegisterManager</span>(<span class="tp">eAssetType</span> type)
+    {
+        <span class="tp">Ptr</span>&lt;<span class="tp">T</span>&gt; manager = <span class="fn">New</span>&lt;<span class="tp">T</span>&gt;();
+        <span class="kw">if</span> (<span class="kw">false</span> == manager-&gt;<span class="fn">Init</span>())
+        {
+            <span class="fn">Delete</span>(manager);
+            <span class="kw">return</span> <span class="kw">false</span>;
+        }
+
+        _managers[type] = manager;
+        <span class="kw">return</span> <span class="kw">true</span>;
+    }
+
+    <span class="kw">virtual</span> <span class="tp">void</span> <span class="fn">Destroy</span>() <span class="kw">override</span>;
+};</pre>
+    </div>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> Init — MeshManager 등록 <span class="filename">Core/AssetManager.cpp</span></div>
+<pre><span class="tp">bool</span> <span class="tp">AssetManager</span>::<span class="fn">Init</span>()
+{
+    <span class="kw">if</span> (!<span class="fn">RegisterManager</span>&lt;<span class="tp">MeshManager</span>&gt;(<span class="tp">eAssetType</span>::Mesh))
+        <span class="kw">return</span> <span class="kw">false</span>;
+
+    <span class="kw">return</span> <span class="kw">true</span>;
+}</pre>
+    </div>
+
+    <div class="info-box">
+      <div class="info-label">사용법</div>
+      <code>AssetManager::Instance().Get&lt;MeshManager&gt;(eAssetType::Mesh)-&gt;FindMesh("Triangle")</code><br>
+      SubManager를 MeshManager로 <strong>다운캐스팅</strong>. Day03의 <code>Cast&lt;Src, Dest&gt;</code>가 여기서 쓰임.
+    </div>
+
+    <!-- ShaderManager -->
+    <h2 id="shadermanager">ShaderManager — 독립 싱글톤</h2>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> CreateShader + FindShader <span class="filename">Shader/ShaderManager.h</span></div>
+<pre><span class="kw">class</span> <span class="tp">ShaderManager</span> : <span class="kw">public</span> <span class="tp">Singleton</span>&lt;<span class="tp">ShaderManager</span>&gt;
+{
+<span class="kw">protected</span>:
+    <span class="tp">std::unordered_map</span>&lt;<span class="tp">std::string</span>, <span class="tp">Ptr</span>&lt;<span class="tp">Shader</span>&gt;&gt; _shaders;
+
+<span class="kw">public</span>:
+    <span class="tp">bool</span> <span class="fn">Init</span>();
+    <span class="kw">virtual</span> <span class="tp">void</span> <span class="fn">Destroy</span>() <span class="kw">override</span>;
+    <span class="tp">Ptr</span>&lt;<span class="tp">Shader</span>&gt; <span class="fn">FindShader</span>(<span class="kw">const</span> <span class="tp">std::string</span>&amp; name);
+
+<span class="kw">private</span>:
+    <span class="kw">template</span>&lt;<span class="kw">typename</span> <span class="tp">T</span>&gt;
+    <span class="tp">bool</span> <span class="fn">CreateShader</span>(<span class="kw">const</span> <span class="tp">std::string</span>&amp; name)
+    {
+        <span class="tp">Ptr</span>&lt;<span class="tp">Shader</span>&gt; shader = <span class="fn">FindShader</span>(name);
+        <span class="kw">if</span> (shader) <span class="kw">return</span> <span class="kw">false</span>;
+
+        shader = <span class="fn">New</span>&lt;<span class="tp">T</span>&gt;();
+        <span class="kw">if</span> (<span class="kw">false</span> == shader-&gt;<span class="fn">Init</span>())
+        {
+            <span class="fn">Delete</span>(shader);
+            <span class="kw">return</span> <span class="kw">false</span>;
+        }
+        _shaders[name] = shader;
+    }
+};</pre>
+    </div>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> Init <span class="filename">Shader/ShaderManager.cpp</span></div>
+<pre><span class="tp">bool</span> <span class="tp">ShaderManager</span>::<span class="fn">Init</span>()
+{
+    <span class="fn">CreateShader</span>&lt;<span class="tp">ColorMeshShader</span>&gt;(<span class="str">"ColorMeshShader"</span>);
+    <span class="kw">return</span> <span class="kw">true</span>;
+}</pre>
+    </div>
+
+    <!-- MeshManager vs ShaderManager -->
+    <h2 id="compare">MeshManager vs ShaderManager</h2>
+
+    <div class="type-table-wrap fade-in">
+      <table class="type-table">
+        <thead><tr><th></th><th>MeshManager</th><th>ShaderManager</th></tr></thead>
+        <tbody>
+          <tr><td class="t-name">부모</td><td class="t-desc">SubManager (AssetManager가 관리)</td><td class="t-desc">Singleton (독립)</td></tr>
+          <tr><td class="t-name">접근</td><td class="t-real">AssetManager::Get&lt;MeshManager&gt;(...)</td><td class="t-real">ShaderManager::Instance()</td></tr>
+          <tr><td class="t-name">이유</td><td class="t-desc">에셋 종류 중 하나</td><td class="t-desc">렌더링 시스템의 일부</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>셰이더는 에셋이라기보다 <strong>렌더링 시스템의 일부</strong>. 매 프레임 바인딩되니까 싱글톤으로 빠르게 접근.</p>
+
+    <!-- InitManager 순서 -->
+    <h2 id="initorder">InitManager 전체 순서</h2>
+
+    <div class="mem-steps fade-in">
+      <div class="mem-step"><div class="mem-step-num">1</div><div class="mem-step-text"><strong>DirectoryManager</strong>.Init()</div></div>
+      <div class="mem-step"><div class="mem-step-num">2</div><div class="mem-step-text"><strong>LogManager</strong>.Init()</div></div>
+      <div class="mem-step"><div class="mem-step-num">3</div><div class="mem-step-text">MemoryPool / ObjectPool (조건부)</div></div>
+      <div class="mem-step"><div class="mem-step-num">4</div><div class="mem-step-text"><strong>TimeManager</strong>.Init()</div></div>
+      <div class="mem-step"><div class="mem-step-num">5</div><div class="mem-step-text"><strong>Device</strong>.Init() — DX11 초기화</div></div>
+      <div class="mem-step"><div class="mem-step-num">6</div><div class="mem-step-text"><strong>AssetManager</strong>.Init() → MeshManager → Triangle</div></div>
+      <div class="mem-step"><div class="mem-step-num">7</div><div class="mem-step-text"><strong>ShaderManager</strong>.Init() → ColorMeshShader</div></div>
+    </div>
+    <p>AssetManager와 ShaderManager가 <strong>마지막</strong> — Device가 초기화된 후에야 GPU 리소스를 만들 수 있으니까.</p>
+
+    <!-- Destroy 순서 -->
+    <h2 id="destroyorder">Destroy 순서 — Init의 역순</h2>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> <span class="filename">Core/GameEngine.cpp</span></div>
+<pre><span class="tp">void</span> <span class="tp">GameEngine</span>::<span class="fn">Destroy</span>()
+{
+    <span class="tp">LogManager</span>::<span class="fn">Instance</span>().<span class="fn">Destroy</span>();
+    <span class="tp">DirectoryManager</span>::<span class="fn">Instance</span>().<span class="fn">Destroy</span>();
+
+    <span class="tp">AssetManager</span>::<span class="fn">Instance</span>().<span class="fn">Destroy</span>();
+    <span class="tp">ShaderManager</span>::<span class="fn">Instance</span>().<span class="fn">Destroy</span>();
+
+<span class="pp">#ifdef _USE_MEMORY_POOL</span>
+    <span class="tp">MemoryPool</span>::<span class="fn">Instance</span>().<span class="fn">Destroy</span>();
+<span class="pp">#elif defined(_USE_OBJECT_POOL)</span>
+    <span class="tp">ObjectPool</span>::<span class="fn">Instance</span>().<span class="fn">Destroy</span>()
+<span class="pp">#endif</span>
+}</pre>
+    </div>
+    <p>GPU 리소스(Asset, Shader)를 <strong>먼저 해제</strong>하고, 메모리 풀을 나중에 정리.</p>
+
+    <div class="page-nav" id="page-nav"></div>
+
+  <script>
+  var PAGE_ID = "0006_04";
+  var ON_THIS_PAGE = [
+    { id: "hierarchy", label: "상속 구조" },
+    { id: "asset", label: "Asset" },
+    { id: "submanager", label: "SubManager" },
+    { id: "assetmanager", label: "AssetManager" },
+    { id: "shadermanager", label: "ShaderManager" },
+    { id: "compare", label: "Mesh vs Shader Manager" },
+    { id: "initorder", label: "InitManager 순서" },
+    { id: "destroyorder", label: "Destroy 순서" },
+  ];
+  </script>
+  <script src="nav.js"></script>
+  </main>
+</body>
+</html>

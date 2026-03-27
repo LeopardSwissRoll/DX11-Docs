@@ -1,0 +1,823 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DAY 02 — 메모리 관리 3가지 전략 | DX11 노트</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Header -->
+  <header class="header">
+    <button class="hamburger" id="hamburger" aria-label="메뉴 열기">
+      <span></span><span></span><span></span>
+    </button>
+    <div class="header-logo">
+      <a href="index.html" style="color:inherit;text-decoration:none">DX11 NOTE</a>
+      <span class="subtitle">Day 02</span>
+    </div>
+    <button class="theme-toggle" id="themeToggle" aria-label="테마 전환">
+      <span class="theme-toggle-icon"></span>
+    </button>
+  </header>
+
+  <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+  <!-- Sidebar -->
+  <nav class="sidebar" id="sidebar"></nav>
+
+  <!-- Main -->
+  <main class="main-content content">
+    <div class="page-title fade-in">
+      <span class="tag tag-day">DAY 02</span>
+      <h1>MemoryPool +<br>3가지 메모리 관리 전략</h1>
+      <p class="page-desc">
+        ObjectPool vs MemoryPool vs shared_ptr — 게임에서 메모리를 다루는 세 가지 방법과 조건부 컴파일 전환
+      </p>
+    </div>
+
+    <!-- ===== 변경된 파일 ===== -->
+    <h2 id="files">변경된 파일</h2>
+    <div class="file-grid fade-in fade-in-d1">
+      <div class="file-card">
+        <div class="file-icon h">h</div>
+        <div><div class="file-name">SegmentPool.h</div><div class="file-role">신규 — 고정 크기 메모리 청크 관리</div></div>
+      </div>
+      <div class="file-card">
+        <div class="file-icon cpp">cpp</div>
+        <div><div class="file-name">SegmentPool.cpp</div><div class="file-role">신규 — SegmentPool 구현</div></div>
+      </div>
+      <div class="file-card">
+        <div class="file-icon h">h</div>
+        <div><div class="file-name">MemoryPool.h</div><div class="file-role">신규 — 크기별 풀 매핑</div></div>
+      </div>
+      <div class="file-card">
+        <div class="file-icon cpp">cpp</div>
+        <div><div class="file-name">MemoryPool.cpp</div><div class="file-role">신규 — MemoryPool 구현</div></div>
+      </div>
+      <div class="file-card">
+        <div class="file-icon h">h</div>
+        <div><div class="file-name">Object.h</div><div class="file-role">대폭 수정 — operator new/delete 오버로딩</div></div>
+      </div>
+      <div class="file-card">
+        <div class="file-icon h">h</div>
+        <div><div class="file-name">ObjectPool.h</div><div class="file-role">수정 — Init/Destroy 추가</div></div>
+      </div>
+      <div class="file-card">
+        <div class="file-icon cpp">cpp</div>
+        <div><div class="file-name">ObjectPool.cpp</div><div class="file-role">수정 — Init/Destroy 구현</div></div>
+      </div>
+      <div class="file-card">
+        <div class="file-icon h">h</div>
+        <div><div class="file-name">Info.h</div><div class="file-role">수정 — 조건부 컴파일 매크로</div></div>
+      </div>
+      <div class="file-card">
+        <div class="file-icon h">h</div>
+        <div><div class="file-name">TestObject.h</div><div class="file-role">수정 — 테스트용 클래스</div></div>
+      </div>
+      <div class="file-card">
+        <div class="file-icon cpp">cpp</div>
+        <div><div class="file-name">TestObject.cpp</div><div class="file-role">수정 — 테스트 코드</div></div>
+      </div>
+      <div class="file-card">
+        <div class="file-icon cpp">cpp</div>
+        <div><div class="file-name">Client.cpp</div><div class="file-role">수정 — 메모리 관리 초기화</div></div>
+      </div>
+    </div>
+
+    <!-- ===== 핵심 — 3가지 전략 비교 ===== -->
+    <h2 id="compare">핵심 — 3가지 전략 비교</h2>
+    <p>
+      게임에서 <code>new</code>/<code>delete</code>를 날것 그대로 쓰면 성능이 나빠진다.
+      OS에게 매번 메모리를 달라고 하는 건 느리고, 할당/해제를 반복하면 <strong>메모리 단편화(fragmentation)</strong>가 생긴다.
+      그래서 미리 메모리를 확보해두고, 필요할 때 빌려 쓰는 전략을 쓴다.
+    </p>
+    <p>
+      이 프로젝트에서는 <strong>3가지 전략</strong>을 구현하고, <code>#ifdef</code>로 전환할 수 있게 만들었다.
+    </p>
+
+    <!-- 3-way comparison diagram -->
+    <div class="mem-compare fade-in fade-in-d1">
+      <!-- Column 1: shared_ptr -->
+      <div class="mem-compare-col">
+        <div class="col-title">1. shared_ptr</div>
+        <p style="font-size:12px;color:var(--text-secondary);margin-bottom:10px">
+          <code>make_shared&lt;TestObject&gt;()</code>
+        </p>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+          <span style="font-size:11px;color:var(--text-secondary)">ref_count:</span>
+          <span class="mem-ref active">1</span>
+        </div>
+        <div class="mem-chunk" style="margin-top:8px">
+          <div class="mem-chunk-label">Heap</div>
+          <div class="mem-cell used" style="min-width:60px">Object</div>
+          <div class="mem-cell used" style="min-width:50px">CtrlBlk</div>
+        </div>
+        <p style="font-size:11px;color:var(--text-muted);margin-top:10px">
+          OS가 직접 할당. ref가 0이 되면 자동 해제.
+          <br>안전하지만 <strong>느리다</strong>.
+        </p>
+      </div>
+
+      <!-- Column 2: ObjectPool -->
+      <div class="mem-compare-col">
+        <div class="col-title">2. ObjectPool</div>
+        <p style="font-size:12px;color:var(--text-secondary);margin-bottom:10px">
+          <code>ObjectPool::Rent&lt;T&gt;()</code>
+        </p>
+        <div style="display:flex;gap:3px;margin-bottom:6px;flex-wrap:wrap">
+          <div class="mem-cell rent" style="min-width:44px">Rent!</div>
+          <div class="mem-cell free">T</div>
+          <div class="mem-cell free">T</div>
+          <div class="mem-cell free">T</div>
+        </div>
+        <div class="mem-arrow-down">&#8593; queue에서 꺼냄</div>
+        <p style="font-size:11px;color:var(--text-muted);margin-top:10px">
+          미리 <code>new</code>로 객체를 만들어 큐에 넣어둠.
+          <br>빠르지만 <strong>타입마다 풀을 따로</strong> 만들어야 함.
+        </p>
+      </div>
+
+      <!-- Column 3: MemoryPool -->
+      <div class="mem-compare-col">
+        <div class="col-title">3. MemoryPool</div>
+        <p style="font-size:12px;color:var(--text-secondary);margin-bottom:10px">
+          <code>new TestObject()</code> (operator new 오버로드)
+        </p>
+        <div class="mem-chunk" style="margin-top:8px">
+          <div class="mem-chunk-label">SegmentPool 64B</div>
+          <div class="mem-cell rent">Rent</div>
+          <div class="mem-cell free">-</div>
+          <div class="mem-cell free">-</div>
+          <div class="mem-cell free">-</div>
+          <div class="mem-cell free">-</div>
+        </div>
+        <p style="font-size:11px;color:var(--text-muted);margin-top:10px">
+          <code>new</code> 키워드 그대로 사용. 내부적으로 크기별 풀에서 메모리를 꺼냄.
+          <br><strong>범용적</strong>이고 빠르다.
+        </p>
+      </div>
+    </div>
+
+    <!-- 비교 테이블 -->
+    <div class="type-table-wrap fade-in fade-in-d2">
+      <table class="type-table">
+        <thead>
+          <tr>
+            <th>항목</th>
+            <th>shared_ptr</th>
+            <th>ObjectPool</th>
+            <th>MemoryPool</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="t-name">할당 속도</td>
+            <td class="t-desc">느림 (OS 호출)</td>
+            <td class="t-desc">빠름 (큐 pop)</td>
+            <td class="t-desc">빠름 (풀에서 꺼냄)</td>
+          </tr>
+          <tr>
+            <td class="t-name">메모리 단편화</td>
+            <td class="t-desc">있음</td>
+            <td class="t-desc">없음 (고정 타입)</td>
+            <td class="t-desc">없음 (고정 크기)</td>
+          </tr>
+          <tr>
+            <td class="t-name">생성/소멸 시점</td>
+            <td class="t-desc">자동 (ref count)</td>
+            <td class="t-desc">수동 (Rent/Return)</td>
+            <td class="t-desc">수동 (new/delete)</td>
+          </tr>
+          <tr>
+            <td class="t-name">범용성</td>
+            <td class="t-desc">모든 타입</td>
+            <td class="t-desc">등록된 타입만</td>
+            <td class="t-desc">Object 상속 타입</td>
+          </tr>
+          <tr>
+            <td class="t-name">추가 오버헤드</td>
+            <td class="t-desc">control block (16~32B)</td>
+            <td class="t-desc">없음</td>
+            <td class="t-desc">FSegment 메타데이터 (Object 내부)</td>
+          </tr>
+          <tr>
+            <td class="t-name">사용법</td>
+            <td class="t-real">make_shared&lt;T&gt;()</td>
+            <td class="t-real">Rent&lt;T&gt;() / Return()</td>
+            <td class="t-real">new T() / delete</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="info-box">
+      <div class="info-label">언제 뭘 쓰나?</div>
+      <strong>MemoryPool</strong> — 기본 전략. 게임 엔진 내부 대부분의 객체에 사용.<br>
+      <strong>ObjectPool</strong> — 총알, 이펙트처럼 <em>같은 타입의 객체를 대량으로 생성/파괴</em>하는 경우.<br>
+      <strong>shared_ptr</strong> — 리소스 공유(텍스처, 메시 등), 소유권이 불명확할 때. 디버그 모드에서 안전장치로 사용.
+    </div>
+
+    <!-- ===== SegmentPool 구조 ===== -->
+    <h2 id="segmentpool">SegmentPool 구조</h2>
+    <p>
+      <code>SegmentPool</code>은 MemoryPool의 <strong>핵심 부품</strong>이다.
+      하나의 SegmentPool은 <strong>고정 크기의 메모리 버킷</strong>을 관리한다.
+      예를 들어 "64바이트 전용 풀"이면, 64바이트짜리 메모리 조각을 미리 여러 개 만들어서 큐에 넣어두고,
+      요청이 오면 하나씩 꺼내준다.
+    </p>
+
+    <h3>Chunk와 Bucket</h3>
+    <p>
+      SegmentPool은 메모리를 <strong>Chunk</strong> 단위로 할당한다. 하나의 Chunk는 여러 개의 <strong>Bucket</strong>으로 나뉜다.
+      Bucket이 실제로 사용자에게 빌려주는 메모리 조각이다.
+    </p>
+
+    <!-- SegmentPool visualization -->
+    <div class="mem-scene fade-in fade-in-d1">
+      <div class="mem-scene-title">SegmentPool — Chunk 내부 구조 (64B x 5 = 320B)</div>
+      <div class="mem-chunk" style="padding:14px 10px;gap:4px">
+        <div class="mem-chunk-label">Chunk (64B &times; 5 = 320B)</div>
+        <div class="mem-cell free" style="min-width:52px">64B</div>
+        <div class="mem-cell rent" style="min-width:52px">64B</div>
+        <div class="mem-cell returned" style="min-width:52px">64B</div>
+        <div class="mem-cell free" style="min-width:52px">64B</div>
+        <div class="mem-cell rent" style="min-width:52px">64B</div>
+      </div>
+      <div style="display:flex;gap:16px;margin-top:14px;font-size:11px;color:var(--text-secondary)">
+        <span><span class="mem-cell free" style="display:inline-flex;min-width:16px;height:16px;font-size:8px;vertical-align:middle"></span> Free — 사용 가능</span>
+        <span><span class="mem-cell rent" style="display:inline-flex;min-width:16px;height:16px;font-size:8px;vertical-align:middle"></span> Rent — 사용 중</span>
+        <span><span class="mem-cell returned" style="display:inline-flex;min-width:16px;height:16px;font-size:8px;vertical-align:middle"></span> Returned — 반납됨 (재사용 대기)</span>
+      </div>
+
+      <div class="mem-arrow-down" style="margin:12px 0 6px">&#9660; 사용 가능한 Bucket은 큐에 들어간다</div>
+
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+        <span style="font-size:11px;color:var(--text-secondary);min-width:80px">Queue:</span>
+        <div class="mem-cell free" style="min-width:36px">0</div>
+        <div class="mem-cell free" style="min-width:36px">3</div>
+        <div class="mem-cell returned" style="min-width:36px">2</div>
+        <span class="mem-arrow">&larr;</span>
+        <span style="font-size:11px;color:var(--text-muted)">Front에서 꺼내고, 반납하면 뒤에 push</span>
+      </div>
+    </div>
+
+    <div class="analogy-box">
+      <div class="analogy-header">
+        <span class="analogy-icon">🎳</span>
+        <span class="analogy-title">ANALOGY — 볼링장</span>
+      </div>
+      <div class="analogy-content">
+        <strong>SegmentPool</strong>은 볼링장이야.<br><br>
+        <strong>Chunk</strong> = 볼링장에 놓인 볼링공 세트 (한 번에 여러 개 구매)<br>
+        <strong>Bucket</strong> = 개별 볼링공 하나<br>
+        <strong>Queue</strong> = 볼링공 반환대 (레일 위에 줄 서 있는 공들)<br><br>
+        손님이 오면 반환대에서 <strong>공 하나를 꺼내주고(Rent)</strong>,
+        게임 끝나면 <strong>다시 반환대에 올려놓는다(Return)</strong>.<br>
+        공이 부족하면? 볼링공 세트를 <strong>추가 구매(새 Chunk 할당)</strong>한다.<br><br>
+        <strong>핵심:</strong> 공을 파괴하고 다시 만드는 게 아니라, <em>돌려쓰는</em> 거야.
+        이게 메모리 풀의 본질이다.
+      </div>
+    </div>
+
+    <h3>FSegment 구조체</h3>
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> FSegment — 메모리 조각 정보 <span class="filename">SegmentPool.h</span></div>
+<pre><span class="kw">using</span> <span class="tp">byte</span> = <span class="tp">unsigned char</span>;  <span class="cm">// 1바이트</span>
+
+<span class="kw">struct</span> <span class="tp">FSegment</span>
+{
+    <span class="tp">byte</span>* _Data = <span class="kw">nullptr</span>;  <span class="cm">// 실제 메모리 주소</span>
+    <span class="tp">unsigned int</span> _Size = <span class="num">0</span>; <span class="cm">// 이 세그먼트의 크기</span>
+    <span class="tp">bool</span> _IsPooled = <span class="kw">false</span>; <span class="cm">// 풀에서 할당한것인지 여부</span>
+};</pre>
+    </div>
+
+    <h3>SegmentPool 핵심 코드</h3>
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> SegmentPool 클래스 구조 <span class="filename">SegmentPool.h</span></div>
+<pre><span class="kw">class</span> <span class="tp">SegmentPool</span>
+{
+    <span class="kw">friend class</span> <span class="tp">MemoryPool</span>;
+
+<span class="kw">private</span>:
+    <span class="fn">SegmentPool</span>(<span class="tp">int</span> buffSize, <span class="tp">int</span> bucketSize);
+    ~<span class="fn">SegmentPool</span>();
+
+<span class="kw">private</span>:
+    <span class="tp">int</span> _BuffSize = <span class="num">0</span>;             <span class="cm">// 버킷 하나의 크기(바이트)</span>
+    <span class="tp">int</span> _BucketSize = <span class="num">0</span>;           <span class="cm">// 버킷의 개수</span>
+
+    <span class="tp">std::vector</span>&lt;<span class="tp">byte</span>*&gt; _Chunks;   <span class="cm">// 실제 할당한 메모리</span>
+    <span class="tp">std::queue</span>&lt;<span class="tp">FSegment</span>&gt; _Buckets; <span class="cm">// 대여 가능한 버킷 목록</span>
+
+<span class="kw">private</span>:
+    <span class="tp">void</span> <span class="fn">Create</span>();                  <span class="cm">// 새 청크를 할당하고 버킷으로 쪼개기</span>
+
+<span class="kw">public</span>:
+    <span class="tp">FSegment</span> <span class="fn">Rent</span>();               <span class="cm">// 버킷 하나를 대여</span>
+    <span class="tp">void</span> <span class="fn">Return</span>(<span class="tp">FSegment</span>&amp; seg);    <span class="cm">// 사용한 버킷을 반납</span>
+};</pre>
+    </div>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> Create / Rent / Return 구현 <span class="filename">SegmentPool.cpp</span></div>
+<pre><span class="tp">void</span> <span class="tp">SegmentPool</span>::<span class="fn">Create</span>()
+{
+    <span class="cm">// _BuffSize * _BucketSize 만큼의 크기를 동적할당</span>
+    <span class="tp">byte</span>* chunk = <span class="kw">new</span> <span class="tp">byte</span>[_BuffSize * _BucketSize]();
+    _Chunks.<span class="fn">push_back</span>(chunk);
+
+    <span class="cm">// 할당한 청크를 버킷으로 쪼개서 큐에 넣는다</span>
+    <span class="kw">for</span> (<span class="tp">size_t</span> i = <span class="num">0</span>; i &lt; _BucketSize; ++i)
+    {
+        <span class="tp">FSegment</span> seg;
+        seg._Data = chunk + (i * _BuffSize);
+        seg._Size = _BuffSize;
+        seg._IsPooled = <span class="kw">true</span>;
+
+        _Buckets.<span class="fn">push</span>(seg);
+    }
+}
+
+<span class="tp">FSegment</span> <span class="tp">SegmentPool</span>::<span class="fn">Rent</span>()
+{
+    <span class="cm">// 버킷이 있다면 큐에서 하나 빌려온다</span>
+    <span class="kw">if</span> (!_Buckets.<span class="fn">empty</span>())
+    {
+        <span class="tp">FSegment</span> seg = _Buckets.<span class="fn">front</span>();
+        _Buckets.<span class="fn">pop</span>();
+        <span class="kw">return</span> seg;
+    }
+
+    <span class="cm">// 버킷이 충분하지 않으므로 직접 동적할당하여 제공</span>
+    <span class="tp">FSegment</span> seg;
+    seg._Data = <span class="kw">new</span> <span class="tp">byte</span>[_BuffSize]();
+    seg._IsPooled = <span class="kw">false</span>;
+    seg._Size = _BuffSize;
+    <span class="kw">return</span> seg;
+}
+
+<span class="tp">void</span> <span class="tp">SegmentPool</span>::<span class="fn">Return</span>(<span class="tp">FSegment</span>&amp; seg)
+{
+    <span class="cm">// 풀에서 빌려온 메모리가 아니면 직접 해제</span>
+    <span class="kw">if</span> (!seg._IsPooled)
+    {
+        <span class="kw">delete</span>[] seg._Data;
+        <span class="kw">return</span>;
+    }
+
+    <span class="cm">// 풀에서 빌려온 메모리를 다시 풀로 되돌려준다</span>
+    _Buckets.<span class="fn">push</span>(seg);
+}</pre>
+    </div>
+
+    <div class="mem-steps">
+      <div class="mem-step">
+        <div class="mem-step-num">1</div>
+        <div class="mem-step-text"><code>Rent()</code> 호출 — 큐에서 맨 앞 버킷 주소를 꺼낸다</div>
+      </div>
+      <div class="mem-step">
+        <div class="mem-step-num">2</div>
+        <div class="mem-step-text">큐가 비어있으면 <code>AllocChunk()</code> — 새 메모리 덩어리를 할당하고 잘라서 큐에 넣음</div>
+      </div>
+      <div class="mem-step">
+        <div class="mem-step-num">3</div>
+        <div class="mem-step-text"><code>Return()</code> — 사용 끝난 버킷 주소를 큐 뒤에 다시 push</div>
+      </div>
+      <div class="mem-step">
+        <div class="mem-step-num">4</div>
+        <div class="mem-step-text">소멸자에서 <code>m_vecChunk</code>에 저장된 모든 Chunk를 <code>free()</code></div>
+      </div>
+    </div>
+
+    <!-- ===== MemoryPool 구조 ===== -->
+    <h2 id="memorypool">MemoryPool 구조</h2>
+    <p>
+      <code>MemoryPool</code>은 여러 개의 <code>SegmentPool</code>을 <strong>크기별로 관리</strong>하는 상위 매니저다.
+      요청된 바이트 수에 맞는 풀을 찾아서 거기서 메모리를 꺼내준다.
+    </p>
+    <p>
+      예를 들어 <code>sizeof(TestObject)</code>가 48바이트라면,
+      48보다 크거나 같은 가장 가까운 풀인 <strong>64B 풀</strong>에서 메모리를 빌려준다.
+    </p>
+
+    <!-- MemoryPool pools visualization -->
+    <div class="mem-scene fade-in fade-in-d2">
+      <div class="mem-scene-title">MemoryPool — 6개의 SegmentPool</div>
+
+      <div class="mem-row">
+        <div class="mem-row-label">16B Pool</div>
+        <div class="mem-cell free">-</div>
+        <div class="mem-cell free">-</div>
+        <div class="mem-cell free">-</div>
+        <div class="mem-cell free">-</div>
+        <div class="mem-cell free">-</div>
+        <div class="mem-cell free">-</div>
+        <div class="mem-cell free">-</div>
+        <div class="mem-cell free">-</div>
+        <div class="mem-cell free">-</div>
+        <div class="mem-cell free">-</div>
+      </div>
+
+      <div class="mem-row">
+        <div class="mem-row-label">32B Pool</div>
+        <div class="mem-cell free">-</div>
+        <div class="mem-cell free">-</div>
+        <div class="mem-cell free">-</div>
+        <div class="mem-cell free">-</div>
+        <div class="mem-cell rent">Rent</div>
+        <div class="mem-cell free">-</div>
+        <div class="mem-cell free">-</div>
+        <div class="mem-cell free">-</div>
+      </div>
+
+      <div class="mem-row">
+        <div class="mem-row-label">64B Pool</div>
+        <div class="mem-cell rent">Rent</div>
+        <div class="mem-cell free">-</div>
+        <div class="mem-cell rent">Rent</div>
+        <div class="mem-cell free">-</div>
+        <div class="mem-cell free">-</div>
+        <div class="mem-cell returned">Ret</div>
+      </div>
+
+      <div class="mem-row">
+        <div class="mem-row-label">128B Pool</div>
+        <div class="mem-cell free">-</div>
+        <div class="mem-cell free">-</div>
+        <div class="mem-cell free">-</div>
+        <div class="mem-cell rent">Rent</div>
+        <div class="mem-cell free">-</div>
+      </div>
+
+      <div class="mem-row">
+        <div class="mem-row-label">256B Pool</div>
+        <div class="mem-cell free">-</div>
+        <div class="mem-cell free">-</div>
+        <div class="mem-cell free">-</div>
+        <div class="mem-cell free">-</div>
+      </div>
+
+      <div class="mem-row">
+        <div class="mem-row-label">512B Pool</div>
+        <div class="mem-cell free">-</div>
+        <div class="mem-cell free">-</div>
+        <div class="mem-cell free">-</div>
+      </div>
+    </div>
+
+    <div class="info-box">
+      <div class="info-label">크기 매핑 — ceil(log2(size)) 방식</div>
+      <code>IndexFromSize(size)</code>가 <code>ceil(log2(size)) - 4</code>로 풀 인덱스를 계산:<br><br>
+      20B &rarr; idx=1 &rarr; <strong>32B 풀</strong> (2^5) &nbsp;|&nbsp;
+      40B &rarr; idx=2 &rarr; <strong>64B 풀</strong> (2^6) &nbsp;|&nbsp;
+      100B &rarr; idx=3 &rarr; <strong>128B 풀</strong> (2^7)<br>
+      512B 초과 &rarr; <code>Find()</code>가 nullptr &rarr; <strong>new byte[] 직접 할당</strong> (IsPooled = false)
+    </div>
+
+    <h3>MemoryPool 핵심 코드</h3>
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> MemoryPool 클래스 <span class="filename">MemoryPool.h</span></div>
+<pre><span class="kw">class</span> <span class="tp">MemoryPool</span> : <span class="kw">public</span> <span class="tp">Singleton</span>&lt;<span class="tp">MemoryPool</span>&gt;
+{
+    <span class="kw">friend</span> <span class="tp">Singleton</span>&lt;<span class="tp">MemoryPool</span>&gt;;
+
+<span class="kw">private</span>:
+    <span class="tp">std::vector</span>&lt;<span class="kw">class</span> <span class="tp">SegmentPool</span>*&gt; _Pools;
+    <span class="kw">const</span> <span class="tp">int</span> _DefaultPow = <span class="num">4</span>;
+
+<span class="kw">public</span>:
+    <span class="kw">virtual</span> <span class="tp">void</span> <span class="fn">Init</span>() <span class="kw">override</span>;
+    <span class="kw">virtual</span> <span class="tp">void</span> <span class="fn">Destroy</span>() <span class="kw">override</span>;
+
+    <span class="tp">FSegment</span> <span class="fn">Rent</span>(<span class="tp">int</span> size);          <span class="cm">// 요청 크기에 맞는 메모리를 빌려준다</span>
+    <span class="tp">void</span> <span class="fn">Return</span>(<span class="tp">FSegment</span>&amp; seg);       <span class="cm">// 대여한 메모리를 반납</span>
+
+<span class="kw">private</span>:
+    <span class="tp">int</span> <span class="fn">IndexFromSize</span>(<span class="tp">int</span> size);      <span class="cm">// 크기 → 풀 인덱스 변환</span>
+    <span class="tp">SegmentPool</span>* <span class="fn">Find</span>(<span class="tp">int</span> idx);       <span class="cm">// 인덱스로 풀 찾기</span>
+};</pre>
+    </div>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> Init — 크기별 풀 생성 <span class="filename">MemoryPool.cpp</span></div>
+<pre><span class="tp">void</span> <span class="tp">MemoryPool</span>::<span class="fn">Init</span>()
+{
+    <span class="tp">int</span> pow = _DefaultPow;
+    _Pools.<span class="fn">push_back</span>(<span class="kw">new</span> <span class="tp">SegmentPool</span>(<span class="kw">static_cast</span>&lt;<span class="tp">int</span>&gt;(<span class="tp">std</span>::<span class="fn">pow</span>(<span class="num">2</span>, pow++)), <span class="num">100</span>)); <span class="cm">// 16B x 100</span>
+    _Pools.<span class="fn">push_back</span>(<span class="kw">new</span> <span class="tp">SegmentPool</span>(<span class="kw">static_cast</span>&lt;<span class="tp">int</span>&gt;(<span class="tp">std</span>::<span class="fn">pow</span>(<span class="num">2</span>, pow++)), <span class="num">100</span>)); <span class="cm">// 32B x 100</span>
+    _Pools.<span class="fn">push_back</span>(<span class="kw">new</span> <span class="tp">SegmentPool</span>(<span class="kw">static_cast</span>&lt;<span class="tp">int</span>&gt;(<span class="tp">std</span>::<span class="fn">pow</span>(<span class="num">2</span>, pow++)),  <span class="num">50</span>)); <span class="cm">// 64B x 50</span>
+    _Pools.<span class="fn">push_back</span>(<span class="kw">new</span> <span class="tp">SegmentPool</span>(<span class="kw">static_cast</span>&lt;<span class="tp">int</span>&gt;(<span class="tp">std</span>::<span class="fn">pow</span>(<span class="num">2</span>, pow++)),  <span class="num">50</span>)); <span class="cm">// 128B x 50</span>
+    _Pools.<span class="fn">push_back</span>(<span class="kw">new</span> <span class="tp">SegmentPool</span>(<span class="kw">static_cast</span>&lt;<span class="tp">int</span>&gt;(<span class="tp">std</span>::<span class="fn">pow</span>(<span class="num">2</span>, pow++)),  <span class="num">10</span>)); <span class="cm">// 256B x 10</span>
+    _Pools.<span class="fn">push_back</span>(<span class="kw">new</span> <span class="tp">SegmentPool</span>(<span class="kw">static_cast</span>&lt;<span class="tp">int</span>&gt;(<span class="tp">std</span>::<span class="fn">pow</span>(<span class="num">2</span>, pow++)),  <span class="num">10</span>)); <span class="cm">// 512B x 10</span>
+}
+</pre>
+    </div>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> Rent — 크기에 맞는 풀 찾기 <span class="filename">MemoryPool.cpp</span></div>
+<pre><span class="tp">FSegment</span> <span class="tp">MemoryPool</span>::<span class="fn">Rent</span>(<span class="tp">int</span> size)
+{
+    <span class="tp">int</span> index = <span class="fn">IndexFromSize</span>(size);
+    <span class="tp">SegmentPool</span>* pool = <span class="fn">Find</span>(index);
+    <span class="kw">if</span> (!pool)
+    {
+        <span class="cm">// 풀 범위 밖 → 직접 동적할당</span>
+        <span class="tp">FSegment</span> seg;
+        seg._Data = <span class="kw">new</span> <span class="tp">byte</span>[size];
+        seg._IsPooled = <span class="kw">false</span>;
+        seg._Size = size;
+        <span class="kw">return</span> seg;
+    }
+
+    <span class="kw">return</span> pool-&gt;<span class="fn">Rent</span>();
+}
+
+<span class="tp">int</span> <span class="tp">MemoryPool</span>::<span class="fn">IndexFromSize</span>(<span class="tp">int</span> size)
+{
+    <span class="tp">int</span> log = <span class="kw">static_cast</span>&lt;<span class="tp">int</span>&gt;(<span class="tp">std</span>::<span class="fn">ceil</span>(<span class="tp">std</span>::<span class="fn">log2</span>(size)));
+    <span class="tp">int</span> idx = log - _DefaultPow;
+    <span class="kw">return</span> idx;
+}</pre>
+    </div>
+
+    <div class="info-box">
+      <div class="info-label">IndexFromSize — 2의 거듭제곱 매핑</div>
+      요청 크기를 <code>ceil(log2(size))</code>로 변환해서 풀 인덱스를 결정한다.<br>
+      예: 40B → <code>ceil(log2(40))</code> = 6 → <code>6 - 4</code> = 2 → <strong>64B 풀</strong> (_Pools[2])<br>
+      풀 범위(16~512B)를 벗어나면 <code>Find()</code>가 nullptr을 반환 → 직접 <code>new byte[]</code> 할당.
+    </div>
+
+    <!-- Interactive pool simulation -->
+    <h3>Pool 시뮬레이션</h3>
+    <p style="font-size:13px;color:var(--text-secondary);margin-bottom:12px">
+      버튼을 눌러서 Rent/Return 동작을 직접 확인해 보자.
+    </p>
+    <div class="mem-scene" id="simScene">
+      <div class="mem-scene-title">64B SegmentPool — Interactive</div>
+      <div class="mem-pool-sim" id="poolSim">
+        <div class="bucket available" data-idx="0">0</div>
+        <div class="bucket available" data-idx="1">1</div>
+        <div class="bucket available" data-idx="2">2</div>
+        <div class="bucket available" data-idx="3">3</div>
+        <div class="bucket available" data-idx="4">4</div>
+        <div class="bucket available" data-idx="5">5</div>
+        <div class="bucket available" data-idx="6">6</div>
+        <div class="bucket available" data-idx="7">7</div>
+      </div>
+      <div class="mem-sim-controls">
+        <button class="mem-sim-btn rent" id="btnRent">Rent()</button>
+        <button class="mem-sim-btn return" id="btnReturn">Return()</button>
+        <button class="mem-sim-btn" id="btnReset">Reset</button>
+      </div>
+      <div class="mem-sim-status" id="simStatus">사용 가능: 8 / 8</div>
+    </div>
+
+    <!-- ===== ObjectPool 변경점 ===== -->
+    <h2 id="objectpool">ObjectPool 변경점</h2>
+    <p>
+      Day 01에서 만든 ObjectPool에 <code>Init()</code>과 <code>Destroy()</code>를 추가했다.
+      Rent할 때 <code>Init()</code>으로 초기화하고, Return할 때 <code>Destroy()</code>로 정리한다.
+      생성자/소멸자 대신 이 함수들을 쓰는 이유는 — 객체를 <strong>파괴하지 않고 재활용</strong>하기 때문이다.
+    </p>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> ObjectPool::Rent — 템플릿 <span class="filename">ObjectPool.h</span></div>
+<pre><span class="kw">template</span>&lt;<span class="kw">typename</span> <span class="tp">T</span>&gt;
+<span class="tp">T</span>* <span class="fn">Rent</span>(<span class="tp">eObjectType</span> type)
+{
+    <span class="kw">auto</span> pool = _Pools.<span class="fn">find</span>(type);
+    <span class="kw">if</span> (pool == _Pools.<span class="fn">end</span>())
+        <span class="kw">return</span> <span class="kw">nullptr</span>;
+
+    <span class="tp">T</span>* retVal = <span class="kw">nullptr</span>;
+    <span class="kw">if</span> (pool-&gt;second.<span class="fn">empty</span>())
+    {
+        retVal = <span class="kw">new</span> <span class="tp">T</span>();           <span class="cm">// 풀이 비면 새로 생성</span>
+        <span class="kw">return</span> retVal;
+    }
+    <span class="kw">else</span>
+    {
+        retVal = <span class="kw">dynamic_cast</span>&lt;<span class="tp">T</span>*&gt;(pool-&gt;second.<span class="fn">front</span>());
+        <span class="kw">if</span> (<span class="kw">nullptr</span> == retVal)
+            <span class="kw">return</span> <span class="kw">nullptr</span>;
+
+        pool-&gt;second.<span class="fn">pop</span>();
+    }
+
+    <span class="kw">return</span> retVal;
+}</pre>
+    </div>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> ObjectPool::Return <span class="filename">ObjectPool.cpp</span></div>
+<pre><span class="tp">void</span> <span class="tp">ObjectPool</span>::<span class="fn">Return</span>(<span class="tp">Object</span>* obj)
+{
+    <span class="kw">if</span> (<span class="kw">nullptr</span> == obj)
+        <span class="kw">return</span>;
+
+    <span class="kw">if</span> (<span class="kw">false</span> == obj-&gt;_IsPooled)
+    {
+        <span class="kw">delete</span> obj;           <span class="cm">// 풀에서 안 온 객체는 직접 해제</span>
+        <span class="kw">return</span>;
+    }
+
+    <span class="tp">eObjectType</span> type = obj-&gt;<span class="fn">GetType</span>();
+    obj-&gt;<span class="fn">SetActive</span>(<span class="kw">false</span>);
+
+    _Pools[type].<span class="fn">push</span>(obj);  <span class="cm">// 풀에 다시 넣기</span>
+}</pre>
+    </div>
+
+    <div class="info-box">
+      <div class="info-label">Init / Destroy vs 생성자 / 소멸자</div>
+      <strong>생성자/소멸자</strong>는 객체의 <em>탄생과 죽음</em>에 한 번씩 불린다.<br>
+      <strong>Init/Destroy</strong>는 객체를 <em>재활용</em>할 때마다 불린다.<br><br>
+      ObjectPool에서 객체는 한 번 태어나면 프로그램 종료까지 안 죽는다.
+      대신 Rent할 때마다 Init으로 "리셋"하고, Return할 때마다 Destroy로 "정리"한다.
+    </div>
+
+    <!-- ===== 조건부 컴파일 전환 ===== -->
+    <h2 id="ifdef">조건부 컴파일 전환</h2>
+    <p>
+      3가지 전략을 <code>#ifdef</code>로 전환할 수 있게 만들었다.
+      <code>Info.h</code>에 매크로를 정의하면 해당 전략이 활성화된다.
+    </p>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> 조건부 컴파일 + 타입 앨리어스 <span class="filename">Info.h</span></div>
+<pre><span class="pp">#ifdef</span> <span class="mc">_USE_MEMORY_POOL</span>
+<span class="kw">using</span> <span class="tp">TestObjectPtr</span> = <span class="kw">class</span> <span class="tp">TestObject</span>*;
+<span class="kw">using</span> <span class="tp">WeakTestObject</span> = <span class="kw">class</span> <span class="tp">TestObject</span>*;
+<span class="pp">#elif</span> <span class="mc">_USE_OBJECT_POOL</span>
+<span class="kw">using</span> <span class="tp">TestObjectPtr</span> = <span class="kw">class</span> <span class="tp">TestObject</span>*;
+<span class="kw">using</span> <span class="tp">WeakTestObject</span> = <span class="kw">class</span> <span class="tp">TestObject</span>*;
+<span class="pp">#else</span>
+<span class="kw">using</span> <span class="tp">TestObjectPtr</span> = <span class="tp">std::shared_ptr</span>&lt;<span class="kw">class</span> <span class="tp">TestObject</span>&gt;;
+<span class="kw">using</span> <span class="tp">WeakTestObject</span> = <span class="tp">std::weak_ptr</span>&lt;<span class="kw">class</span> <span class="tp">TestObject</span>&gt;;
+<span class="pp">#endif</span></pre>
+    </div>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> Object.h — 3가지 버전 (핵심 부분만) <span class="filename">Object.h</span></div>
+<pre><span class="pp">#ifdef</span> <span class="mc">_USE_MEMORY_POOL</span>
+<span class="pp">#include</span> <span class="str">"MemoryPool.h"</span>
+
+<span class="kw">class</span> <span class="tp">Object</span>
+{
+<span class="kw">protected</span>:
+    <span class="tp">FSegment</span> _Segment;              <span class="cm">// 반납할 때 필요한 정보</span>
+
+<span class="kw">public</span>:
+    <span class="tp">void</span>* <span class="kw">operator</span> <span class="kw">new</span>(<span class="tp">size_t</span> size)
+    {
+        <span class="tp">FSegment</span> seg = <span class="tp">MemoryPool</span>::<span class="fn">Instance</span>().<span class="fn">Rent</span>((<span class="tp">int</span>)size);
+        <span class="tp">Object</span>* obj = (<span class="tp">Object</span>*)seg._Data;
+        obj-&gt;_Segment = seg;
+        <span class="kw">return</span> seg._Data;
+    }
+
+    <span class="tp">void</span> <span class="kw">operator</span> <span class="kw">delete</span>(<span class="tp">void</span>* ptr) <span class="kw">noexcept</span>
+    {
+        <span class="tp">Object</span>* obj = (<span class="tp">Object</span>*)ptr;
+        <span class="tp">MemoryPool</span>::<span class="fn">Instance</span>().<span class="fn">Return</span>(obj-&gt;_Segment);
+    }
+
+    <span class="kw">virtual</span> <span class="tp">void</span> <span class="fn">Init</span>() = <span class="num">0</span>;
+    <span class="kw">virtual</span> <span class="tp">void</span> <span class="fn">Destroy</span>() = <span class="num">0</span>;
+};
+
+<span class="pp">#elif</span> <span class="mc">_USE_OBJECT_POOL</span>
+
+<span class="kw">class</span> <span class="tp">Object</span>
+{
+<span class="kw">protected</span>:
+    <span class="tp">bool</span> _IsPooled = <span class="kw">false</span>;
+    <span class="tp">eObjectType</span> _Type = <span class="tp">eObjectType</span>::END;
+    <span class="cm">// ... Active, Enable 등</span>
+
+    <span class="kw">virtual</span> <span class="tp">void</span> <span class="fn">Init</span>() = <span class="num">0</span>;
+    <span class="kw">virtual</span> <span class="tp">void</span> <span class="fn">Destroy</span>() = <span class="num">0</span>;
+};
+
+<span class="pp">#else</span>
+
+<span class="kw">class</span> <span class="tp">Object</span> : <span class="kw">public</span> <span class="tp">std::enable_shared_from_this</span>&lt;<span class="tp">Object</span>&gt;
+{
+<span class="kw">public</span>:
+    <span class="kw">template</span>&lt;<span class="kw">typename</span> <span class="tp">T</span>&gt;
+    <span class="tp">std::shared_ptr</span>&lt;<span class="tp">T</span>&gt; <span class="fn">This</span>()
+    {
+        <span class="kw">return</span> <span class="tp">std</span>::<span class="fn">dynamic_pointer_cast</span>&lt;<span class="tp">T</span>&gt;(<span class="fn">shared_from_this</span>());
+    }
+
+    <span class="kw">virtual</span> <span class="tp">void</span> <span class="fn">Init</span>() = <span class="num">0</span>;
+    <span class="kw">virtual</span> <span class="tp">void</span> <span class="fn">Destroy</span>() = <span class="num">0</span>;
+};
+<span class="pp">#endif</span></pre>
+    </div>
+
+    <div class="info-box">
+      <div class="info-label">개선 제안 — 템플릿 앨리어스로 보일러플레이트 제거</div>
+      현재 구조는 클래스마다 using 6줄이 필요하지만, 템플릿 앨리어스를 쓰면 한 번 정의로 끝:
+
+      <div class="code-block" style="margin-top:10px;margin-bottom:0">
+        <div class="code-header"><span class="lang">C++</span> template alias 대안</div>
+<pre><span class="pp">#if</span> <span class="kw">defined</span>(<span class="mc">_USE_MEMORY_POOL</span>) || <span class="kw">defined</span>(<span class="mc">_USE_OBJECT_POOL</span>)
+<span class="kw">template</span>&lt;<span class="kw">typename</span> <span class="tp">T</span>&gt; <span class="kw">using</span> <span class="tp">Ptr</span> = <span class="tp">T</span>*;
+<span class="kw">template</span>&lt;<span class="kw">typename</span> <span class="tp">T</span>&gt; <span class="kw">using</span> <span class="tp">WeakRef</span> = <span class="tp">T</span>*;
+<span class="pp">#else</span>
+<span class="kw">template</span>&lt;<span class="kw">typename</span> <span class="tp">T</span>&gt; <span class="kw">using</span> <span class="tp">Ptr</span> = <span class="tp">std::shared_ptr</span>&lt;<span class="tp">T</span>&gt;;
+<span class="kw">template</span>&lt;<span class="kw">typename</span> <span class="tp">T</span>&gt; <span class="kw">using</span> <span class="tp">WeakRef</span> = <span class="tp">std::weak_ptr</span>&lt;<span class="tp">T</span>&gt;;
+<span class="pp">#endif</span>
+
+<span class="cm">// 클래스가 몇 개든 이렇게만 쓰면 됨:</span>
+<span class="tp">Ptr</span>&lt;<span class="tp">TestObject</span>&gt; obj;
+<span class="tp">Ptr</span>&lt;<span class="tp">Monster</span>&gt; mon;
+<span class="tp">WeakRef</span>&lt;<span class="tp">Monster</span>&gt; weak;</pre>
+      </div>
+    </div>
+
+    <!-- ===== 아직 구현 안 된 것들 ===== -->
+    <h2 id="todo">아직 구현 안 된 것들</h2>
+
+    <div class="warn-box">
+      <div class="warn-label">TODO — 아직 구현 안 됨</div>
+      <ul style="margin-top:8px;padding-left:20px">
+        <li><strong>Thread Safety</strong> — 현재 SegmentPool은 싱글스레드 전용. 멀티스레드 환경에서는 mutex나 lock-free queue가 필요.</li>
+        <li><strong>메모리 정렬(Alignment)</strong> — 현재는 정렬을 고려하지 않음. SIMD를 쓸 경우 16바이트 정렬이 필요할 수 있음.</li>
+        <li><strong>메모리 누수 추적</strong> — Rent한 버킷을 Return하지 않으면 추적할 방법이 없음. 디버그용 카운터 추가 필요.</li>
+        <li><strong>풀 크기 자동 조절</strong> — 현재는 고정 크기. 런타임에 사용 패턴을 분석해서 풀 크기를 조절하는 기능 미구현.</li>
+        <li><strong>512B 초과 객체 관리</strong> — 큰 객체는 직접 malloc하는데, 이것도 별도 관리가 필요할 수 있음.</li>
+      </ul>
+    </div>
+
+    <!-- Pool simulation -->
+    <script>
+    (function() {
+      const buckets = document.querySelectorAll('#poolSim .bucket');
+      const statusEl = document.getElementById('simStatus');
+      const rentedStack = [];
+
+      function updateStatus() {
+        const available = document.querySelectorAll('#poolSim .bucket.available').length;
+        const total = buckets.length;
+        statusEl.textContent = '사용 가능: ' + available + ' / ' + total;
+      }
+
+      document.getElementById('btnRent').addEventListener('click', function() {
+        for (let i = 0; i < buckets.length; i++) {
+          if (buckets[i].classList.contains('available')) {
+            buckets[i].classList.remove('available');
+            buckets[i].classList.add('rented');
+            rentedStack.push(i);
+            updateStatus();
+            return;
+          }
+        }
+        statusEl.textContent = '모든 버킷이 사용 중! (Chunk 추가 할당 필요)';
+      });
+
+      document.getElementById('btnReturn').addEventListener('click', function() {
+        if (rentedStack.length === 0) {
+          statusEl.textContent = '반환할 버킷이 없음';
+          return;
+        }
+        const idx = rentedStack.pop();
+        buckets[idx].classList.remove('rented');
+        buckets[idx].classList.add('available');
+        updateStatus();
+      });
+
+      document.getElementById('btnReset').addEventListener('click', function() {
+        buckets.forEach(b => {
+          b.classList.remove('rented');
+          b.classList.add('available');
+        });
+        rentedStack.length = 0;
+        updateStatus();
+      });
+    })();
+    </script>
+
+    <!-- Prev / Next -->
+    <div class="page-nav" id="page-nav"></div>
+  <script>
+  var PAGE_ID = "0002_01";
+  var ON_THIS_PAGE = [
+    { id: "files", label: "변경된 파일" },
+    { id: "compare", label: "3가지 전략 비교" },
+    { id: "segmentpool", label: "SegmentPool 구조" },
+    { id: "memorypool", label: "MemoryPool 구조" },
+    { id: "objectpool", label: "ObjectPool 변경점" },
+    { id: "ifdef", label: "조건부 컴파일 전환" },
+    { id: "todo", label: "미구현 항목" },
+  ];
+  </script>
+  <script src="nav.js"></script>
+  </main>
+
+</body>
+</html>

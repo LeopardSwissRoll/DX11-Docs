@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FMatrix 행렬 구현 | DX11 노트</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <header class="header">
+    <button class="hamburger" id="hamburger" aria-label="메뉴 열기">
+      <span></span><span></span><span></span>
+    </button>
+    <div class="header-logo">
+      <a href="index.html" style="color:inherit;text-decoration:none">DX11 NOTE</a>
+      <span class="subtitle">Deep Dive</span>
+    </div>
+    <button class="theme-toggle" id="themeToggle" aria-label="테마 전환">
+      <span class="theme-toggle-icon"></span>
+    </button>
+  </header>
+
+  <div class="sidebar-overlay" id="sidebarOverlay"></div>
+  <nav class="sidebar" id="sidebar"></nav>
+
+  <main class="main-content content">
+    <div class="page-title fade-in">
+      <span class="tag tag-detail">DEEP DIVE</span>
+      <h1>FMatrix<br>행렬 구현 해부</h1>
+      <p class="page-desc">union + align(16) + DirectX::XMMATRIX를 감싼 행렬 클래스. Scaling, Rotation(쿼터니언), Translation.</p>
+    </div>
+
+    <!-- union 구조 -->
+    <h2 id="union">FMatrix — union + align(16)</h2>
+
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> <span class="filename">Common/Matrix.h</span></div>
+<pre><span class="mc">_declspec</span>(<span class="fn">align</span>(<span class="num">16</span>)) <span class="kw">union</span> <span class="tp">FMatrix</span>
+{
+    <span class="tp">DirectX::XMMATRIX</span> _m;
+
+    <span class="kw">struct</span>
+    {
+        <span class="tp">float</span> _11, _12, _13, _14;
+        <span class="tp">float</span> _21, _22, _23, _24;
+        <span class="tp">float</span> _31, _32, _33, _34;
+        <span class="tp">float</span> _41, _42, _43, _44;
+    };
+
+    <span class="tp">FVector4D</span> _v[<span class="num">4</span>] = {};
+};</pre>
+    </div>
+
+    <!-- union 시각화 -->
+    <div class="mem-scene fade-in">
+      <div class="mem-scene-title">같은 64바이트 메모리를 3가지로 접근</div>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-family:var(--font-code);font-size:10px;color:var(--accent);min-width:80px">_m</span>
+          <div class="mem-cell used" style="min-width:100%;height:30px;font-size:9px">XMMATRIX — DirectX 함수에 직접 넘김</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-family:var(--font-code);font-size:10px;color:var(--accent-green);min-width:80px">_11~_44</span>
+          <div style="display:flex;gap:2px;flex-wrap:wrap">
+            <div class="mem-cell rent" style="min-width:28px;height:30px;font-size:8px">_11</div>
+            <div class="mem-cell rent" style="min-width:28px;height:30px;font-size:8px">_12</div>
+            <div class="mem-cell rent" style="min-width:28px;height:30px;font-size:8px">...</div>
+            <div class="mem-cell rent" style="min-width:28px;height:30px;font-size:8px">_44</div>
+          </div>
+          <span style="font-size:9px;color:var(--text-muted)">개별 원소</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-family:var(--font-code);font-size:10px;color:var(--accent-orange);min-width:80px">_v[4]</span>
+          <div style="display:flex;gap:2px">
+            <div class="mem-cell returned" style="min-width:60px;height:30px;font-size:8px">_v[0]</div>
+            <div class="mem-cell returned" style="min-width:60px;height:30px;font-size:8px">_v[1]</div>
+            <div class="mem-cell returned" style="min-width:60px;height:30px;font-size:8px">_v[2]</div>
+            <div class="mem-cell returned" style="min-width:60px;height:30px;font-size:8px">_v[3]</div>
+          </div>
+          <span style="font-size:9px;color:var(--text-muted)">행 단위</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="info-box">
+      <div class="info-label">align(16) — 왜?</div>
+      GPU는 <strong>16바이트 단위</strong>로 데이터를 읽어. <code>XMMATRIX</code>는 내부에 <code>__m128</code> (SSE 레지스터)을 쓰니까 16바이트 정렬 필수. 안 하면 크래시.
+    </div>
+
+    <!-- 기본 생성자 -->
+    <h2 id="identity">기본 생성자 — 단위행렬</h2>
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> <span class="filename">Common/Matrix.cpp</span></div>
+<pre><span class="tp">FMatrix</span>::<span class="fn">FMatrix</span>()
+{
+    _m = <span class="tp">DirectX</span>::<span class="fn">XMMatrixIdentity</span>();
+}</pre>
+    </div>
+    <p><code>FMatrix mW;</code>로 선언하면 자동으로 단위행렬. 곱해도 원본 유지.</p>
+
+    <!-- Scaling -->
+    <h2 id="scaling">Scaling — 크기 행렬</h2>
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> <span class="filename">Common/Matrix.cpp</span></div>
+<pre><span class="tp">void</span> <span class="tp">FMatrix</span>::<span class="fn">Scaling</span>(<span class="kw">const</span> <span class="tp">FVector3D</span> &amp; v)
+{
+    _m = <span class="tp">DirectX</span>::<span class="fn">XMMatrixScaling</span>(v._x, v._y, v._z);
+}</pre>
+    </div>
+
+    <!-- Rotation -->
+    <h2 id="rotation">Rotation — 쿼터니언 회전</h2>
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> <span class="filename">Common/Matrix.cpp</span></div>
+<pre><span class="tp">void</span> <span class="tp">FMatrix</span>::<span class="fn">Rotation</span>(<span class="kw">const</span> <span class="tp">FVector3D</span> &amp; v)
+{
+    <span class="tp">float</span> x = <span class="tp">DirectX</span>::<span class="fn">XMConvertToRadians</span>(v._x);
+    <span class="tp">float</span> y = <span class="tp">DirectX</span>::<span class="fn">XMConvertToRadians</span>(v._y);
+    <span class="tp">float</span> z = <span class="tp">DirectX</span>::<span class="fn">XMConvertToRadians</span>(v._z);
+
+    <span class="tp">DirectX::XMVECTOR</span> quat = <span class="tp">DirectX</span>::<span class="fn">XMQuaternionRotationRollPitchYaw</span>(x, y, z);
+
+    <span class="cm">//사원수를 기준으로 회전 행렬 생성</span>
+    _m = <span class="tp">DirectX</span>::<span class="fn">XMMatrixRotationQuaternion</span>(quat);
+}</pre>
+    </div>
+
+    <div class="info-box">
+      <div class="info-label">왜 쿼터니언?</div>
+      오일러 각(X→Y→Z 순서 회전)은 <strong>짐벌락</strong> 문제가 있어 — 한 축이 90도 회전하면 나머지 두 축이 겹쳐. 쿼터니언은 짐벌락 없고 보간도 부드러움.
+    </div>
+
+    <h3>단축 회전 + 임의 축 회전</h3>
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> <span class="filename">Common/Matrix.cpp</span></div>
+<pre><span class="cm">//x축 기준 회전 행렬</span>
+<span class="tp">void</span> <span class="tp">FMatrix</span>::<span class="fn">RotationX</span>(<span class="tp">float</span> x)
+{
+    <span class="tp">float</span> xVal = <span class="tp">DirectX</span>::<span class="fn">XMConvertToRadians</span>(x);
+    _m = <span class="tp">DirectX</span>::<span class="fn">XMMatrixRotationX</span>(xVal);
+}
+
+<span class="cm">//y축 기준 회전 행렬</span>
+<span class="tp">void</span> <span class="tp">FMatrix</span>::<span class="fn">RotationY</span>(<span class="tp">float</span> y)
+{
+    <span class="tp">float</span> yVal = <span class="tp">DirectX</span>::<span class="fn">XMConvertToRadians</span>(y);
+    _m = <span class="tp">DirectX</span>::<span class="fn">XMMatrixRotationY</span>(yVal);
+}
+
+<span class="cm">//z축 기준 회전 행렬</span>
+<span class="tp">void</span> <span class="tp">FMatrix</span>::<span class="fn">RotationZ</span>(<span class="tp">float</span> z)
+{
+    <span class="tp">float</span> zVal = <span class="tp">DirectX</span>::<span class="fn">XMConvertToRadians</span>(z);
+    _m = <span class="tp">DirectX</span>::<span class="fn">XMMatrixRotationZ</span>(zVal);
+}
+
+<span class="cm">//축을 기준으로 회전 행렬</span>
+<span class="tp">void</span> <span class="tp">FMatrix</span>::<span class="fn">RotationAxis</span>(<span class="kw">const</span> <span class="tp">FVector3D</span> &amp; axis, <span class="tp">float</span> angle)
+{
+    <span class="tp">float</span> angleVal = <span class="tp">DirectX</span>::<span class="fn">XMConvertToRadians</span>(angle);
+    <span class="tp">DirectX::XMVECTOR</span> axisVal = <span class="tp">DirectX</span>::<span class="fn">XMLoadFloat3</span>((<span class="tp">DirectX::XMFLOAT3</span>*)&amp;axis);
+
+    _m = <span class="tp">DirectX</span>::<span class="fn">XMMatrixRotationAxis</span>(axisVal, angleVal);
+}</pre>
+    </div>
+
+    <!-- Translation -->
+    <h2 id="translation">Translation — 이동 행렬</h2>
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> <span class="filename">Common/Matrix.cpp</span></div>
+<pre><span class="tp">void</span> <span class="tp">FMatrix</span>::<span class="fn">Translation</span>(<span class="kw">const</span> <span class="tp">FVector3D</span> &amp; v)
+{
+    _m = <span class="tp">DirectX</span>::<span class="fn">XMMatrixTranslation</span>(v._x, v._y, v._z);
+}</pre>
+    </div>
+
+    <!-- 행렬 시각화기 -->
+    <h2 id="visualizer">행렬 시각화기</h2>
+    <p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px">변환을 선택하고 슬라이더를 조절하면, 4×4 행렬 값 + 삼각형 변환을 실시간으로 볼 수 있어.</p>
+
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+      <button class="mem-sim-btn" id="matBtnIdentity" style="font-size:10px;padding:5px 10px" data-type="identity">Identity</button>
+      <button class="mem-sim-btn" id="matBtnScale" style="font-size:10px;padding:5px 10px" data-type="scale">Scaling</button>
+      <button class="mem-sim-btn" id="matBtnRotZ" style="font-size:10px;padding:5px 10px" data-type="rotZ">RotationZ</button>
+      <button class="mem-sim-btn" id="matBtnTrans" style="font-size:10px;padding:5px 10px" data-type="trans">Translation</button>
+    </div>
+    <div id="matSliderWrap" style="display:none;margin-bottom:12px">
+      <label style="font-family:var(--font-code);font-size:10px;color:var(--text-secondary)"><span id="matSliderLabel">값</span>: <span id="matSliderVal">1</span></label>
+      <input type="range" id="matSlider" min="-30" max="30" value="10" style="width:100%;accent-color:var(--accent)">
+    </div>
+
+    <div style="display:grid;grid-template-columns:auto 1fr;gap:16px;align-items:start">
+      <!-- 4×4 Grid -->
+      <div>
+        <div id="matGrid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:2px;font-family:var(--font-code);font-size:11px"></div>
+        <div id="matLabel" style="font-size:10px;color:var(--text-muted);margin-top:6px;text-align:center;font-family:var(--font-code)">Identity</div>
+      </div>
+      <!-- Preview canvas -->
+      <div>
+        <canvas id="matCanvas" width="160" height="160" style="width:100%;max-width:160px;border-radius:8px;background:#000;border:1px solid var(--border)"></canvas>
+      </div>
+    </div>
+
+    <!-- 행렬 곱 -->
+    <h2 id="multiply">행렬 곱 — 순서가 중요</h2>
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> <span class="filename">Common/Matrix.cpp</span></div>
+<pre><span class="tp">FMatrix</span> <span class="tp">FMatrix</span>::<span class="kw">operator</span>*(<span class="kw">const</span> <span class="tp">FMatrix</span>&amp; m) <span class="kw">const</span>
+{
+    <span class="kw">return</span> <span class="tp">FMatrix</span>(_m * m._m);
+}</pre>
+    </div>
+
+    <!-- Transpose/Inverse -->
+    <h2 id="transpose">Transpose + Inverse</h2>
+    <div class="code-block">
+      <div class="code-header"><span class="lang">C++</span> <span class="filename">Common/Matrix.cpp</span></div>
+<pre><span class="tp">void</span> <span class="tp">FMatrix</span>::<span class="fn">Transpose</span>()
+{
+    _m = <span class="tp">DirectX</span>::<span class="fn">XMMatrixTranspose</span>(_m);
+}
+
+<span class="tp">void</span> <span class="tp">FMatrix</span>::<span class="fn">Inverse</span>()
+{
+    <span class="tp">DirectX::XMVECTOR</span> det = <span class="tp">DirectX</span>::<span class="fn">XMMatrixDeterminant</span>(_m);
+    _m = <span class="tp">DirectX</span>::<span class="fn">XMMatrixInverse</span>(&amp;det, _m);
+}</pre>
+    </div>
+    <p><strong>Transpose</strong> — 행↔열 뒤집기. 왜 필요한지는 <a href="0007_03_상수버퍼_CPU에서_GPU로_행렬전달.html">0007_03 상수 버퍼</a>에서 설명.</p>
+    <p><strong>Inverse</strong> — "이 변환을 되돌리는 행렬". 카메라 뷰 행렬에 사용.</p>
+
+    <!-- DirectXMath 정리 -->
+    <h2 id="dxmath">DirectXMath 함수 정리</h2>
+    <div class="type-table-wrap fade-in">
+      <table class="type-table">
+        <thead><tr><th>함수</th><th>하는 일</th></tr></thead>
+        <tbody>
+          <tr><td class="t-name">XMMatrixIdentity()</td><td class="t-desc">단위행렬</td></tr>
+          <tr><td class="t-name">XMMatrixScaling(x,y,z)</td><td class="t-desc">크기 행렬</td></tr>
+          <tr><td class="t-name">XMQuaternionRotationRollPitchYaw</td><td class="t-desc">오일러 → 쿼터니언</td></tr>
+          <tr><td class="t-name">XMMatrixRotationQuaternion</td><td class="t-desc">쿼터니언 → 회전 행렬</td></tr>
+          <tr><td class="t-name">XMMatrixRotationX/Y/Z</td><td class="t-desc">단축 회전</td></tr>
+          <tr><td class="t-name">XMMatrixTranslation(x,y,z)</td><td class="t-desc">이동 행렬</td></tr>
+          <tr><td class="t-name">XMMatrixTranspose</td><td class="t-desc">전치</td></tr>
+          <tr><td class="t-name">XMMatrixInverse</td><td class="t-desc">역행렬</td></tr>
+          <tr><td class="t-name">XMConvertToRadians</td><td class="t-desc">도 → 라디안</td></tr>
+          <tr><td class="t-name">XMMatrixPerspectiveFovLH</td><td class="t-desc">원근 투영</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="page-nav" id="page-nav"></div>
+
+  <script>
+  var PAGE_ID = "0007_02";
+  var ON_THIS_PAGE = [
+    { id: "union", label: "union + align(16)" },
+    { id: "identity", label: "단위행렬" },
+    { id: "scaling", label: "Scaling" },
+    { id: "rotation", label: "Rotation (쿼터니언)" },
+    { id: "translation", label: "Translation" },
+    { id: "multiply", label: "행렬 곱" },
+    { id: "transpose", label: "Transpose + Inverse" },
+    { id: "dxmath", label: "DirectXMath 정리" },
+  ];
+  </script>
+  <script src="nav.js"></script>
+
+  <!-- 행렬 시각화기 -->
+  <script>
+  (function(){
+    var grid = document.getElementById('matGrid');
+    var label = document.getElementById('matLabel');
+    var canvas = document.getElementById('matCanvas');
+    var sliderWrap = document.getElementById('matSliderWrap');
+    var slider = document.getElementById('matSlider');
+    var sliderLabel = document.getElementById('matSliderLabel');
+    var sliderVal = document.getElementById('matSliderVal');
+    if (!grid || !canvas) return;
+    var ctx = canvas.getContext('2d');
+    var S = 160, cx = S/2, cy = S/2;
+
+    var currentType = 'identity';
+    var tri = [{x:0,y:-20},{x:17,y:13},{x:-17,y:13}];
+
+    function getMatrix(type, val) {
+      var m = [[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1]];
+      var labelText = 'Identity';
+
+      if (type === 'scale') {
+        m[0][0] = val; m[1][1] = val; m[2][2] = 1;
+        labelText = 'Scaling(' + val.toFixed(1) + ', ' + val.toFixed(1) + ', 1)';
+      } else if (type === 'rotZ') {
+        var rad = val * Math.PI / 180;
+        var c = Math.cos(rad), s = Math.sin(rad);
+        m[0][0] = c; m[0][1] = -s;
+        m[1][0] = s; m[1][1] = c;
+        labelText = 'RotationZ(' + val.toFixed(0) + '°)';
+      } else if (type === 'trans') {
+        m[3][0] = val; m[3][1] = val * 0.5;
+        labelText = 'Translation(' + val.toFixed(1) + ', ' + (val*0.5).toFixed(1) + ', 0)';
+      }
+
+      return {m: m, label: labelText};
+    }
+
+    function renderGrid(mat) {
+      grid.innerHTML = '';
+      for (var r = 0; r < 4; r++) {
+        for (var c = 0; c < 4; c++) {
+          var cell = document.createElement('div');
+          var v = mat[r][c];
+          cell.textContent = Math.abs(v) < 0.001 ? '0' : v.toFixed(2);
+          cell.style.cssText = 'padding:6px 4px;text-align:center;background:var(--bg-card);border:1px solid var(--border);border-radius:3px;min-width:42px;font-size:10px;color:' + (Math.abs(v - (r===c?1:0)) > 0.001 ? 'var(--accent-green)' : 'var(--text-secondary)');
+          grid.appendChild(cell);
+        }
+      }
+    }
+
+    function renderPreview(mat) {
+      ctx.clearRect(0, 0, S, S);
+      ctx.strokeStyle = '#ffffff0a';
+      for (var i = 0; i <= S; i += 20) {
+        ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, S); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(S, i); ctx.stroke();
+      }
+      ctx.strokeStyle = '#ffffff15';
+      ctx.beginPath(); ctx.moveTo(cx, 0); ctx.lineTo(cx, S); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, cy); ctx.lineTo(S, cy); ctx.stroke();
+
+      var pts = [];
+      for (var i = 0; i < 3; i++) {
+        var x = tri[i].x, y = tri[i].y;
+        // Apply 2D portion of matrix (row-major: x' = x*m00 + y*m10 + m30)
+        var nx = x * mat[0][0] + y * mat[1][0] + mat[3][0];
+        var ny = x * mat[0][1] + y * mat[1][1] + mat[3][1];
+        pts.push({x: cx + nx, y: cy - ny});
+      }
+
+      ctx.fillStyle = '#58a6ff22';
+      ctx.beginPath();
+      ctx.moveTo(pts[0].x, pts[0].y);
+      ctx.lineTo(pts[1].x, pts[1].y);
+      ctx.lineTo(pts[2].x, pts[2].y);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.strokeStyle = '#58a6ff';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+
+    function update() {
+      var val = parseInt(slider.value) / 10;
+      if (currentType === 'rotZ') val = parseInt(slider.value) * 3;
+      if (currentType === 'trans') val = parseInt(slider.value);
+      sliderVal.textContent = currentType === 'rotZ' ? val.toFixed(0) + '°' : val.toFixed(1);
+
+      var result = getMatrix(currentType, val);
+      renderGrid(result.m);
+      label.textContent = result.label;
+      renderPreview(result.m);
+    }
+
+    function setType(type) {
+      currentType = type;
+      document.querySelectorAll('[data-type]').forEach(function(b) {
+        b.style.borderColor = b.dataset.type === type ? 'var(--accent)' : 'var(--border)';
+      });
+      sliderWrap.style.display = type === 'identity' ? 'none' : 'block';
+      if (type === 'scale') { sliderLabel.textContent = '크기'; slider.min = 5; slider.max = 30; slider.value = 10; }
+      if (type === 'rotZ') { sliderLabel.textContent = '각도'; slider.min = 0; slider.max = 120; slider.value = 0; }
+      if (type === 'trans') { sliderLabel.textContent = '이동'; slider.min = -30; slider.max = 30; slider.value = 0; }
+      update();
+    }
+
+    document.querySelectorAll('[data-type]').forEach(function(btn) {
+      btn.addEventListener('click', function() { setType(this.dataset.type); });
+    });
+
+    slider.addEventListener('input', update);
+    setType('identity');
+  })();
+  </script>
+  </main>
+</body>
+</html>
