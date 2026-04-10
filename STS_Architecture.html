@@ -1,0 +1,1387 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>STS 모작 — 아키텍처 맵</title>
+<style>
+:root {
+  --bg: #0e1117;
+  --surface: #161b22;
+  --surface2: #1c2129;
+  --border: #30363d;
+  --text: #c9d1d9;
+  --text-dim: #8b949e;
+  --accent-blue: #58a6ff;
+  --accent-green: #3fb950;
+  --accent-orange: #d29922;
+  --accent-red: #f85149;
+  --accent-purple: #bc8cff;
+  --accent-cyan: #39d2c0;
+  --accent-pink: #f778ba;
+  --radius: 8px;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Segoe UI', 'Malgun Gothic', sans-serif;
+  line-height: 1.6;
+  padding: 2rem;
+}
+h1 { color: var(--accent-blue); font-size: 1.8rem; margin-bottom: .3rem; }
+h2 {
+  color: var(--accent-orange);
+  font-size: 1.3rem;
+  margin: 2.5rem 0 1rem;
+  padding-bottom: .4rem;
+  border-bottom: 1px solid var(--border);
+}
+h3 { color: var(--accent-green); font-size: 1.05rem; margin: 1.2rem 0 .5rem; }
+.subtitle { color: var(--text-dim); font-size: .95rem; margin-bottom: 2rem; }
+a { color: var(--accent-blue); text-decoration: none; }
+
+.tab-bar {
+  display: flex; gap: 4px;
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 4px;
+  margin-bottom: 2rem;
+  overflow-x: auto;
+  position: sticky; top: 0; z-index: 100;
+  border: 1px solid var(--border);
+}
+.tab-btn {
+  padding: .55rem 1.1rem;
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  border-radius: 6px;
+  font-size: .85rem;
+  white-space: nowrap;
+  transition: all .15s;
+  font-family: inherit;
+}
+.tab-btn:hover { color: var(--text); background: var(--surface2); }
+.tab-btn.active { color: #fff; background: var(--accent-blue); }
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+
+.class-box {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  margin-bottom: .8rem;
+  transition: border-color .15s;
+}
+.class-box:hover { border-color: var(--accent-blue); }
+.class-header {
+  padding: .5rem .8rem;
+  font-weight: 700;
+  font-size: .9rem;
+  display: flex; align-items: center; gap: .5rem;
+}
+.class-body {
+  padding: .4rem .8rem .6rem;
+  font-size: .82rem;
+  color: var(--text-dim);
+  border-top: 1px solid var(--border);
+}
+.class-body code {
+  color: var(--accent-cyan);
+  font-size: .8rem;
+  background: var(--surface2);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+.class-body .member { margin: 2px 0; }
+.class-body .section-label {
+  color: var(--accent-orange);
+  font-size: .75rem;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  margin-top: .4rem;
+  margin-bottom: .15rem;
+}
+
+.badge {
+  font-size: .65rem;
+  padding: 1px 6px;
+  border-radius: 10px;
+  font-weight: 600;
+  letter-spacing: .3px;
+}
+.badge-interface { background: #1f3a5f; color: var(--accent-blue); }
+.badge-class { background: #1a3a1a; color: var(--accent-green); }
+.badge-struct { background: #3a2e1a; color: var(--accent-orange); }
+.badge-enum { background: #2e1a3a; color: var(--accent-purple); }
+.badge-system { background: #3a1a2a; color: var(--accent-pink); }
+
+.hierarchy {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+}
+.hierarchy-row {
+  display: flex;
+  gap: 1.5rem;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+.grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; }
+.grid-4 { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: .8rem; }
+
+.flow {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  overflow-x: auto;
+  padding: 1rem 0;
+}
+.flow-step {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: .7rem .9rem;
+  min-width: 160px;
+  font-size: .82rem;
+  flex-shrink: 0;
+}
+.flow-step .step-num {
+  font-size: .7rem;
+  color: var(--accent-orange);
+  font-weight: 700;
+}
+.flow-step .step-title {
+  font-weight: 700;
+  margin: .15rem 0;
+  font-size: .85rem;
+}
+.flow-step .step-detail {
+  color: var(--text-dim);
+  font-size: .78rem;
+}
+.flow-arrow {
+  display: flex;
+  align-items: center;
+  color: var(--accent-blue);
+  font-size: 1.2rem;
+  padding: 0 .3rem;
+  flex-shrink: 0;
+}
+
+.seq-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .82rem;
+}
+.seq-table th {
+  background: var(--surface);
+  color: var(--accent-blue);
+  padding: .5rem .6rem;
+  text-align: left;
+  border-bottom: 2px solid var(--accent-blue);
+  position: sticky; top: 48px;
+  font-size: .8rem;
+}
+.seq-table td {
+  padding: .4rem .6rem;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+.seq-table tr:hover { background: var(--surface2); }
+.seq-num { color: var(--accent-orange); font-weight: 700; min-width: 30px; }
+.seq-actor { color: var(--accent-green); font-weight: 600; min-width: 120px; }
+.seq-action { color: var(--text); }
+.seq-data { color: var(--accent-cyan); font-family: 'Consolas', monospace; font-size: .78rem; }
+
+.state-diagram {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.5rem;
+  background: var(--surface);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+}
+.state-node {
+  padding: .5rem 1.2rem;
+  border-radius: 20px;
+  font-weight: 600;
+  font-size: .85rem;
+  text-align: center;
+  min-width: 140px;
+}
+.state-title   { background: #1f3a5f; color: var(--accent-blue); border: 1px solid var(--accent-blue); }
+.state-map     { background: #1a3a1a; color: var(--accent-green); border: 1px solid var(--accent-green); }
+.state-combat  { background: #3a1a1a; color: var(--accent-red); border: 1px solid var(--accent-red); }
+.state-event   { background: #2e1a3a; color: var(--accent-purple); border: 1px solid var(--accent-purple); }
+.state-shop    { background: #3a2e1a; color: var(--accent-orange); border: 1px solid var(--accent-orange); }
+.state-rest    { background: #1a2e3a; color: var(--accent-cyan); border: 1px solid var(--accent-cyan); }
+.state-reward  { background: #3a2a1a; color: #e3b341; border: 1px solid #e3b341; }
+.state-end     { background: #2a1a1a; color: var(--accent-pink); border: 1px solid var(--accent-pink); }
+.state-row {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.transition-label {
+  font-size: .72rem;
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+.legend {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: .8rem;
+  background: var(--surface);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  margin-bottom: 1.5rem;
+  font-size: .8rem;
+}
+.legend-item { display: flex; align-items: center; gap: .3rem; }
+.legend-color {
+  width: 12px; height: 12px;
+  border-radius: 3px;
+}
+
+.pipeline {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  padding: 1rem;
+  background: var(--surface);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  overflow-x: auto;
+}
+.pipe-node {
+  padding: .5rem .8rem;
+  border-radius: var(--radius);
+  font-size: .82rem;
+  text-align: center;
+  flex-shrink: 0;
+  border: 1px solid;
+  min-width: 100px;
+}
+.pipe-arrow {
+  font-size: 1.1rem;
+  color: var(--text-dim);
+  padding: 0 .4rem;
+  flex-shrink: 0;
+}
+.pipe-hook {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: .2rem;
+  flex-shrink: 0;
+}
+.pipe-hook-label {
+  font-size: .68rem;
+  color: var(--accent-orange);
+  font-weight: 600;
+}
+.pipe-hook-box {
+  padding: .3rem .6rem;
+  background: var(--surface2);
+  border: 1px dashed var(--accent-orange);
+  border-radius: 4px;
+  font-size: .75rem;
+  color: var(--text-dim);
+}
+
+.code-block {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem;
+  font-family: 'Consolas', 'Courier New', monospace;
+  font-size: .8rem;
+  overflow-x: auto;
+  line-height: 1.5;
+  white-space: pre;
+  color: var(--text-dim);
+}
+.code-block .kw { color: var(--accent-purple); }
+.code-block .ty { color: var(--accent-blue); }
+.code-block .fn { color: var(--accent-green); }
+.code-block .cm { color: #484f58; font-style: italic; }
+.code-block .st { color: var(--accent-orange); }
+.code-block .num { color: var(--accent-cyan); }
+
+.dep-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .78rem;
+}
+.dep-table th, .dep-table td {
+  padding: .35rem .5rem;
+  border: 1px solid var(--border);
+  text-align: center;
+}
+.dep-table th {
+  background: var(--surface);
+  color: var(--accent-blue);
+  font-size: .75rem;
+}
+.dep-table td.dep-yes {
+  background: #1a3a1a;
+  color: var(--accent-green);
+  font-weight: 700;
+}
+.dep-table td.dep-no {
+  color: var(--border);
+}
+.dep-table td.dep-self {
+  background: var(--surface2);
+  color: var(--text-dim);
+}
+.dep-table td:first-child, .dep-table th:first-child {
+  text-align: left;
+  color: var(--accent-orange);
+  font-weight: 600;
+  background: var(--surface);
+}
+
+@media (max-width: 800px) {
+  .grid-2, .grid-3 { grid-template-columns: 1fr; }
+  body { padding: 1rem; }
+}
+</style>
+</head>
+<body>
+
+<h1>STS 모작 — 아키텍처 맵</h1>
+<p class="subtitle">DX11 STS(Slay the Spire) 모작 — 2026-04-10 — 콘솔 프로토타입 단계</p>
+
+<!-- ===== 탭 바 ===== -->
+<div class="tab-bar" id="tabBar">
+  <button class="tab-btn active" data-tab="overview">전체 개요</button>
+  <button class="tab-btn" data-tab="state">상태 관리자</button>
+  <button class="tab-btn" data-tab="hierarchy">클래스 계층</button>
+  <button class="tab-btn" data-tab="deps">의존성 행렬</button>
+  <button class="tab-btn" data-tab="battle">전투 흐름</button>
+  <button class="tab-btn" data-tab="damage">데미지 파이프라인</button>
+  <button class="tab-btn" data-tab="example">예시: Strike+약화</button>
+  <button class="tab-btn" data-tab="deck">덱 시스템</button>
+  <button class="tab-btn" data-tab="structs">핵심 구조체</button>
+</div>
+
+<!-- ============================================================ -->
+<!-- 탭: 전체 개요 -->
+<!-- ============================================================ -->
+<div class="tab-panel active" id="tab-overview">
+<h2>시스템 전체 개요</h2>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-color" style="background:var(--accent-blue)"></div> 인터페이스</div>
+  <div class="legend-item"><div class="legend-color" style="background:var(--accent-green)"></div> 클래스</div>
+  <div class="legend-item"><div class="legend-color" style="background:var(--accent-orange)"></div> 구조체/데이터</div>
+  <div class="legend-item"><div class="legend-color" style="background:var(--accent-purple)"></div> 열거형</div>
+  <div class="legend-item"><div class="legend-color" style="background:var(--accent-pink)"></div> 시스템/매니저</div>
+</div>
+
+<h3>8대 핵심 축</h3>
+<div class="grid-4">
+  <div class="class-box">
+    <div class="class-header" style="background:#1a2a1a"><span class="badge badge-struct">구조체</span> CardDef</div>
+    <div class="class-body">불변 카드 템플릿. 이름, 비용, 효과 목록, 플래그, 업그레이드 버전.</div>
+  </div>
+  <div class="class-box">
+    <div class="class-header" style="background:#1a2a1a"><span class="badge badge-struct">구조체</span> CardInstance</div>
+    <div class="class-body">가변 런타임 카드. CardDef를 참조하며, 전투 중 변경사항만 추적.</div>
+  </div>
+  <div class="class-box">
+    <div class="class-header" style="background:#1a2a1a"><span class="badge badge-struct">구조체</span> EffectDef</div>
+    <div class="class-body">원자적 효과 하나: 연산 + 대상 + 값 + 태그. 카드는 이것의 벡터를 보유.</div>
+  </div>
+  <div class="class-box">
+    <div class="class-header" style="background:#1a2a1a"><span class="badge badge-struct">구조체</span> StatusDef</div>
+    <div class="class-body">불변 버프/디버프 템플릿. 중첩 규칙, 우선순위, 분류.</div>
+  </div>
+  <div class="class-box">
+    <div class="class-header" style="background:#1a2e2a"><span class="badge badge-class">클래스</span> BattleState</div>
+    <div class="class-body">전투 상태 전체를 소유: 플레이어, 적, 큐, 이벤트 버스, RNG, 턴 수.</div>
+  </div>
+  <div class="class-box">
+    <div class="class-header" style="background:#1a2a1a"><span class="badge badge-struct">구조체</span> Action</div>
+    <div class="class-body">원자적 동작 요청. 종류 + 발신자 + 대상 + 값. 큐에 적재 후 실행.</div>
+  </div>
+  <div class="class-box">
+    <div class="class-header" style="background:#2a1a2a"><span class="badge badge-system">시스템</span> EventBus</div>
+    <div class="class-body">발행-구독 허브. 이벤트를 우선순위에 따라 IEffectHolder 구독자에게 전달.</div>
+  </div>
+  <div class="class-box">
+    <div class="class-header" style="background:#1f1a2f"><span class="badge badge-interface">인터페이스</span> IEffectHolder</div>
+    <div class="class-body">이벤트에 훅을 걸 수 있는 모든 것의 공통 인터페이스: 버프, 유물, (일부) 카드.</div>
+  </div>
+</div>
+
+<h3>DX_Project에서 재사용 (프로토타입 이후)</h3>
+<div class="grid-4">
+  <div class="class-box" style="opacity:.6">
+    <div class="class-header"><span class="badge badge-class">엔진</span> Device</div>
+    <div class="class-body">DX11 디바이스/컨텍스트/스왑체인 초기화</div>
+  </div>
+  <div class="class-box" style="opacity:.6">
+    <div class="class-header"><span class="badge badge-class">엔진</span> GameEngine</div>
+    <div class="class-body">메인 루프 셸 (Init/Run/Logic)</div>
+  </div>
+  <div class="class-box" style="opacity:.6">
+    <div class="class-header"><span class="badge badge-class">엔진</span> TimeManager</div>
+    <div class="class-body">델타 타임, chrono 기반</div>
+  </div>
+  <div class="class-box" style="opacity:.6">
+    <div class="class-header"><span class="badge badge-class">엔진</span> Defines (Ptr/New)</div>
+    <div class="class-body">메모리 관리 추상화 레이어</div>
+  </div>
+</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- 탭: 상태 관리자 -->
+<!-- ============================================================ -->
+<div class="tab-panel" id="tab-state">
+<h2>StateManager — 상태 스택 아키텍처</h2>
+
+<div class="grid-2">
+  <div>
+    <div class="class-box">
+      <div class="class-header" style="background:#2a1a2a"><span class="badge badge-system">시스템</span> StateManager</div>
+      <div class="class-body">
+        <div class="section-label">멤버</div>
+        <div class="member"><code>stack&lt;State*&gt; _stateStack</code></div>
+        <div class="member"><code>State* _pendingState</code></div>
+        <div class="member"><code>TransitionType _pendingType</code></div>
+        <div class="section-label">메서드</div>
+        <div class="member"><code>void RequestChange(State*)</code> — 스택 전체 교체</div>
+        <div class="member"><code>void RequestPush(State*)</code> — 상단에 삽입</div>
+        <div class="member"><code>void RequestPop()</code> — 최상단 제거</div>
+        <div class="member"><code>void Update()</code> — 최상단 틱 후 대기 전이 처리</div>
+        <div class="section-label">유효성 검증 규칙</div>
+        <div class="member">전이 요청은 Update() 종료 시점에 지연 처리.<br>프레임당 대기 전이는 하나만 허용.</div>
+      </div>
+    </div>
+    <div class="class-box">
+      <div class="class-header" style="background:#1f1a2f"><span class="badge badge-interface">인터페이스</span> State</div>
+      <div class="class-body">
+        <div class="section-label">생명주기</div>
+        <div class="member"><code>void OnEnter()</code> — 최초 활성화</div>
+        <div class="member"><code>void OnExit()</code> — 영구 제거</div>
+        <div class="member"><code>void OnPause()</code> — Push로 묻힐 때</div>
+        <div class="member"><code>void OnResume()</code> — Pop으로 복귀할 때</div>
+        <div class="member"><code>void Update()</code> — 틱 (최상단만 호출)</div>
+      </div>
+    </div>
+  </div>
+  <div>
+    <h3>게임 상태 다이어그램</h3>
+    <div class="state-diagram">
+      <div class="state-node state-title">TitleState (타이틀)</div>
+      <div class="transition-label">Change</div>
+      <div style="font-size:1.2rem;color:var(--text-dim)">&#x25BC;</div>
+
+      <div class="state-node state-map">MapState (맵)</div>
+      <div class="transition-label">Push</div>
+      <div style="font-size:1.2rem;color:var(--text-dim)">&#x25BC;</div>
+
+      <div class="state-row">
+        <div class="state-node state-combat">CombatState (전투)</div>
+        <div class="state-node state-event">EventState (이벤트)</div>
+        <div class="state-node state-shop">ShopState (상점)</div>
+        <div class="state-node state-rest">RestState (휴식)</div>
+      </div>
+
+      <div class="transition-label" style="margin-top:.5rem">전투 Push &rarr; Pop으로 맵 복귀</div>
+      <div style="font-size:1.2rem;color:var(--text-dim)">&#x25BC;</div>
+      <div class="state-node state-reward">RewardState (보상)</div>
+      <div class="transition-label">Pop &rarr; MapState 재개</div>
+
+      <div style="margin-top:1rem; border-top:1px dashed var(--border); padding-top:.8rem; width:100%; text-align:center">
+        <div class="transition-label">Change (MapState에서 사망/승리 시)</div>
+        <div style="font-size:1.2rem;color:var(--text-dim)">&#x25BC;</div>
+        <div class="state-row">
+          <div class="state-node state-end">GameOverState (게임오버)</div>
+          <div class="state-node state-end">VictoryState (승리)</div>
+        </div>
+        <div class="transition-label" style="margin-top:.4rem">Change &rarr; TitleState</div>
+      </div>
+    </div>
+
+    <h3 style="margin-top:1.2rem">전이 유형</h3>
+    <table class="seq-table" style="font-size:.82rem">
+      <tr><th>유형</th><th>스택 동작</th><th>STS 예시</th></tr>
+      <tr>
+        <td style="color:var(--accent-red);font-weight:700">Change</td>
+        <td>전체 비우기 &rarr; 새 상태 삽입</td>
+        <td>타이틀 &rarr; 맵, 게임오버 &rarr; 타이틀</td>
+      </tr>
+      <tr>
+        <td style="color:var(--accent-green);font-weight:700">Push</td>
+        <td>최상단 일시정지 &rarr; 새 상태 삽입</td>
+        <td>맵 &rarr; 전투, 전투 &rarr; 보상</td>
+      </tr>
+      <tr>
+        <td style="color:var(--accent-orange);font-weight:700">Pop</td>
+        <td>최상단 제거 &rarr; 아래 상태 재개</td>
+        <td>보상 완료 &rarr; 맵 복귀</td>
+      </tr>
+    </table>
+  </div>
+</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- 탭: 클래스 계층 -->
+<!-- ============================================================ -->
+<div class="tab-panel" id="tab-hierarchy">
+<h2>클래스 상속 &amp; 구성 관계</h2>
+
+<div class="grid-2">
+<!-- 좌측: IEffectHolder 계층 -->
+<div>
+<h3>IEffectHolder 계층 (이벤트 훅 시스템)</h3>
+<div class="hierarchy">
+  <div class="hierarchy-row">
+    <div class="class-box" style="min-width:280px">
+      <div class="class-header" style="background:#1f1a2f"><span class="badge badge-interface">인터페이스</span> IEffectHolder</div>
+      <div class="class-body">
+        <div class="member"><code>bool RespondsTo(BattleEvent)</code></div>
+        <div class="member"><code>void ModifyDamage(DamageRequest&amp;)</code></div>
+        <div class="member"><code>void ModifyBlock(BlockRequest&amp;)</code></div>
+        <div class="member"><code>void OnEvent(event, data, queue)</code></div>
+        <div class="member"><code>bool ShouldPrevent(event, data)</code></div>
+        <div class="member"><code>int GetPriority()</code></div>
+        <div class="member"><code>EffectSource GetSource()</code></div>
+      </div>
+    </div>
+  </div>
+
+  <div style="display:flex; align-items:flex-start; gap:0; justify-content:center; margin-top:-1px;">
+    <div style="width:140px; height:2px; background:var(--border)"></div>
+  </div>
+  <div style="display:flex; gap:4rem; justify-content:center; margin-top:-1px;">
+    <div style="width:2px; height:20px; background:var(--border); position:relative;">
+      <div style="position:absolute;bottom:-1px;left:50%;transform:translateX(-50%);border-left:5px solid transparent;border-right:5px solid transparent;border-top:6px solid var(--border)"></div>
+    </div>
+    <div style="width:2px; height:20px; background:var(--border); position:relative;">
+      <div style="position:absolute;bottom:-1px;left:50%;transform:translateX(-50%);border-left:5px solid transparent;border-right:5px solid transparent;border-top:6px solid var(--border)"></div>
+    </div>
+  </div>
+
+  <div class="hierarchy-row">
+    <div class="class-box" style="min-width:220px">
+      <div class="class-header" style="background:#1a2e2a"><span class="badge badge-class">클래스</span> StatusInstance</div>
+      <div class="class-body">
+        <div class="member"><code>const StatusDef* def</code></div>
+        <div class="member"><code>int amount</code> — 세기/남은턴/스택</div>
+        <div class="member"><code>int aux</code> — 보조값 (카운트다운 등)</div>
+        <div class="member"><code>bool justApplied</code></div>
+        <div class="member"><code>EntityId owner</code> — 부착 대상</div>
+      </div>
+    </div>
+    <div class="class-box" style="min-width:220px">
+      <div class="class-header" style="background:#1a2e2a"><span class="badge badge-class">클래스</span> RelicInstance</div>
+      <div class="class-body">
+        <div class="member"><code>const RelicDef* def</code></div>
+        <div class="member"><code>int counter</code> — 발동 카운터</div>
+        <div class="member"><code>bool enabled</code> — 활성/비활성</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div style="margin-top:1rem; padding:.6rem; background:var(--surface2); border-radius:var(--radius); font-size:.82rem; color:var(--text-dim);">
+  <strong style="color:var(--accent-orange)">핵심 통찰:</strong> StatusInstance와 RelicInstance는 동일한 인터페이스를 공유한다.
+  EventBus 입장에서 둘은 완전히 동일 — "전투 이벤트에 반응하는 무언가".
+  <br>이 덕분에 유물과 버프 모두 EffectSource가 될 수 있다.
+</div>
+</div>
+
+<!-- 우측: EntityState 계층 -->
+<div>
+<h3>EntityState 계층 (전투 상태)</h3>
+<div class="hierarchy">
+  <div class="hierarchy-row">
+    <div class="class-box" style="min-width:280px">
+      <div class="class-header" style="background:#1a2e2a"><span class="badge badge-class">클래스</span> EntityState</div>
+      <div class="class-body">
+        <div class="member"><code>EntityId id</code></div>
+        <div class="member"><code>string name</code></div>
+        <div class="member"><code>int hp, maxHp, block</code></div>
+        <div class="member"><code>vector&lt;StatusInstance*&gt; statuses</code></div>
+        <div class="section-label">메서드</div>
+        <div class="member"><code>ApplyStatus(id, amount, queue)</code></div>
+        <div class="member"><code>ModifyOutgoingDamage(req)</code> — 내가 주는 피해</div>
+        <div class="member"><code>ModifyIncomingDamage(req)</code> — 내가 받는 피해</div>
+      </div>
+    </div>
+  </div>
+
+  <div style="display:flex; align-items:flex-start; gap:0; justify-content:center; margin-top:-1px;">
+    <div style="width:140px; height:2px; background:var(--border)"></div>
+  </div>
+  <div style="display:flex; gap:4rem; justify-content:center; margin-top:-1px;">
+    <div style="width:2px; height:20px; background:var(--border); position:relative;">
+      <div style="position:absolute;bottom:-1px;left:50%;transform:translateX(-50%);border-left:5px solid transparent;border-right:5px solid transparent;border-top:6px solid var(--border)"></div>
+    </div>
+    <div style="width:2px; height:20px; background:var(--border); position:relative;">
+      <div style="position:absolute;bottom:-1px;left:50%;transform:translateX(-50%);border-left:5px solid transparent;border-right:5px solid transparent;border-top:6px solid var(--border)"></div>
+    </div>
+  </div>
+
+  <div class="hierarchy-row">
+    <div class="class-box" style="min-width:220px">
+      <div class="class-header" style="background:#1a3a1a"><span class="badge badge-class">클래스</span> PlayerState</div>
+      <div class="class-body">
+        <div class="member"><code>int energy, maxEnergy</code></div>
+        <div class="member"><code>vector&lt;RelicInstance*&gt; relics</code></div>
+        <div class="section-label">오버라이드</div>
+        <div class="member"><code>ModifyOutgoingDamage</code><br>&nbsp; 상태이상 + 유물 파이프라인</div>
+      </div>
+    </div>
+    <div class="class-box" style="min-width:220px">
+      <div class="class-header" style="background:#3a1a1a"><span class="badge badge-class">클래스</span> EnemyState</div>
+      <div class="class-body">
+        <div class="member"><code>EnemyIntent currentIntent</code></div>
+        <div class="member"><code>EnemyAI* ai</code> — AI 상태머신</div>
+        <div class="section-label">AI</div>
+        <div class="member">랜덤 병용 상태 머신</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h3 style="margin-top:1.5rem">구성(Composition): BattleState</h3>
+<div class="class-box">
+  <div class="class-header" style="background:#2a1a2a"><span class="badge badge-system">소유</span> BattleState</div>
+  <div class="class-body">
+    <div class="member"><code>PlayerState player</code> <span style="color:var(--accent-green)">&#x25C6;</span></div>
+    <div class="member"><code>vector&lt;EnemyState&gt; enemies</code> <span style="color:var(--accent-red)">&#x25C6;</span></div>
+    <div class="member"><code>ActionQueue queue</code> <span style="color:var(--accent-orange)">&#x25C6;</span></div>
+    <div class="member"><code>EventBus events</code> <span style="color:var(--accent-pink)">&#x25C6;</span></div>
+    <div class="member"><code>DeckState deck</code> <span style="color:var(--accent-cyan)">&#x25C6;</span></div>
+    <div class="member"><code>RngTracks rng</code> <span style="color:var(--accent-purple)">&#x25C6;</span></div>
+    <div class="member"><code>int turn</code></div>
+    <div class="member" style="margin-top:.3rem; font-size:.75rem; color:var(--text-dim)">&#x25C6; = 소유 (구성 관계)</div>
+  </div>
+</div>
+</div>
+</div>
+
+<h3 style="margin-top:1.5rem">데이터 정의 (불변 템플릿)</h3>
+<div class="grid-3">
+  <div class="class-box">
+    <div class="class-header" style="background:#2a2a1a"><span class="badge badge-struct">정의</span> CardDef</div>
+    <div class="class-body">
+      <div class="member"><code>CardId id</code></div>
+      <div class="member"><code>string name</code></div>
+      <div class="member"><code>CardType type</code></div>
+      <div class="member"><code>int baseCost</code> — 기본 비용</div>
+      <div class="member"><code>TargetRule targetRule</code> — 대상 규칙</div>
+      <div class="member"><code>vector&lt;EffectDef&gt; effects</code></div>
+      <div class="member"><code>CardFlags flags</code> — 소멸/천상/선천/유지</div>
+      <div class="member"><code>CardId upgradedVersion</code> — 업그레이드 버전</div>
+    </div>
+  </div>
+  <div class="class-box">
+    <div class="class-header" style="background:#2a2a1a"><span class="badge badge-struct">정의</span> StatusDef</div>
+    <div class="class-body">
+      <div class="member"><code>StatusId id</code></div>
+      <div class="member"><code>string name</code></div>
+      <div class="member"><code>StatusCategory category</code> — 버프/디버프/특수</div>
+      <div class="member"><code>bool stacksIntensity</code> — 세기 중첩 여부</div>
+      <div class="member"><code>int defaultPriority</code> — 기본 우선순위</div>
+    </div>
+  </div>
+  <div class="class-box">
+    <div class="class-header" style="background:#2a2a1a"><span class="badge badge-struct">정의</span> RelicDef</div>
+    <div class="class-body">
+      <div class="member"><code>RelicId id</code></div>
+      <div class="member"><code>string name</code></div>
+      <div class="member"><code>int defaultPriority</code> — 기본 우선순위</div>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- 탭: 의존성 행렬 -->
+<!-- ============================================================ -->
+<div class="tab-panel" id="tab-deps">
+<h2>의존성 행렬</h2>
+<p style="color:var(--text-dim);font-size:.85rem;margin-bottom:1rem">
+  행(Row)이 열(Column)에 의존. <span style="color:var(--accent-green);font-weight:700">&#x25CF;</span> = 직접 의존.
+  읽는 법: "BattleState는 PlayerState, EnemyState, ActionQueue, EventBus, DeckState에 의존한다."
+</p>
+
+<div style="overflow-x:auto">
+<table class="dep-table">
+  <tr>
+    <th></th>
+    <th>EffectSource</th>
+    <th>IEffectHolder</th>
+    <th>StatusDef</th>
+    <th>StatusInstance</th>
+    <th>RelicDef</th>
+    <th>RelicInstance</th>
+    <th>EntityState</th>
+    <th>PlayerState</th>
+    <th>EnemyState</th>
+    <th>CardDef</th>
+    <th>CardInstance</th>
+    <th>EffectDef</th>
+    <th>Action</th>
+    <th>ActionQueue</th>
+    <th>EventBus</th>
+    <th>DeckState</th>
+    <th>BattleState</th>
+  </tr>
+  <tr>
+    <td>EffectSource</td>
+    <td class="dep-self">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td>
+  </tr>
+  <tr>
+    <td>IEffectHolder</td>
+    <td class="dep-yes">&#x25CF;</td><td class="dep-self">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td>
+  </tr>
+  <tr>
+    <td>StatusInstance</td>
+    <td class="dep-yes">&#x25CF;</td><td class="dep-yes">&#x25CF;</td><td class="dep-yes">&#x25CF;</td><td class="dep-self">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td>
+  </tr>
+  <tr>
+    <td>RelicInstance</td>
+    <td class="dep-yes">&#x25CF;</td><td class="dep-yes">&#x25CF;</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-yes">&#x25CF;</td><td class="dep-self">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td>
+  </tr>
+  <tr>
+    <td>EntityState</td>
+    <td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-yes">&#x25CF;</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-self">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-yes">&#x25CF;</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td>
+  </tr>
+  <tr>
+    <td>PlayerState</td>
+    <td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-yes">&#x25CF;</td><td class="dep-no">-</td><td class="dep-yes">&#x25CF;</td><td class="dep-yes">&#x25CF;</td><td class="dep-self">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td>
+  </tr>
+  <tr>
+    <td>EnemyState</td>
+    <td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-yes">&#x25CF;</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-yes">&#x25CF;</td><td class="dep-no">-</td><td class="dep-self">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td>
+  </tr>
+  <tr>
+    <td>CardInstance</td>
+    <td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-yes">&#x25CF;</td><td class="dep-self">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td>
+  </tr>
+  <tr>
+    <td>Action</td>
+    <td class="dep-yes">&#x25CF;</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-yes">&#x25CF;</td><td class="dep-no">-</td><td class="dep-self">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td>
+  </tr>
+  <tr>
+    <td>EventBus</td>
+    <td class="dep-no">-</td><td class="dep-yes">&#x25CF;</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-yes">&#x25CF;</td><td class="dep-self">-</td><td class="dep-no">-</td><td class="dep-no">-</td>
+  </tr>
+  <tr>
+    <td>DeckState</td>
+    <td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-yes">&#x25CF;</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-self">-</td><td class="dep-no">-</td>
+  </tr>
+  <tr>
+    <td>BattleState</td>
+    <td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-yes">&#x25CF;</td><td class="dep-yes">&#x25CF;</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-no">-</td><td class="dep-yes">&#x25CF;</td><td class="dep-yes">&#x25CF;</td><td class="dep-yes">&#x25CF;</td><td class="dep-self">-</td>
+  </tr>
+</table>
+</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- 탭: 전투 흐름 -->
+<!-- ============================================================ -->
+<div class="tab-panel" id="tab-battle">
+<h2>전투 턴 흐름</h2>
+
+<h3>턴 단계 (이벤트 타임라인)</h3>
+<div class="flow">
+  <div class="flow-step">
+    <div class="step-num">1단계</div>
+    <div class="step-title">턴 시작</div>
+    <div class="step-detail">
+      EventBus가 <code>TurnStart</code> 발행<br>
+      상태이상 틱 (재생, 금속화)<br>
+      유물 발동 (오리할컴 등)
+    </div>
+  </div>
+  <div class="flow-arrow">&rarr;</div>
+  <div class="flow-step">
+    <div class="step-num">2단계</div>
+    <div class="step-title">드로우</div>
+    <div class="step-detail">
+      Action: Draw(5)<br>
+      뽑기 더미 비었으면 &rarr;<br>
+      &nbsp; 버린 더미 셔플 후 뽑기 더미로<br>
+      EventBus가 <code>AfterDraw</code> 발행
+    </div>
+  </div>
+  <div class="flow-arrow">&rarr;</div>
+  <div class="flow-step" style="border-color:var(--accent-green)">
+    <div class="step-num" style="color:var(--accent-green)">3단계</div>
+    <div class="step-title" style="color:var(--accent-green)">플레이어 입력</div>
+    <div class="step-detail">
+      WaitForInput 액션<br>
+      플레이어가 카드 + 대상 선택<br>
+      또는 "턴 종료" 클릭
+    </div>
+  </div>
+  <div class="flow-arrow">&rarr;</div>
+  <div class="flow-step">
+    <div class="step-num">4단계</div>
+    <div class="step-title">카드 결정</div>
+    <div class="step-detail">
+      <code>BeforeCardPlayed</code><br>
+      EffectDef &rarr; Action으로 적재<br>
+      <code>CardPlayed</code><br>
+      카드 &rarr; 버림/소멸 더미
+    </div>
+  </div>
+  <div class="flow-arrow">&rarr;</div>
+  <div class="flow-step" style="border-color:var(--accent-red)">
+    <div class="step-num" style="color:var(--accent-red)">5단계</div>
+    <div class="step-title" style="color:var(--accent-red)">액션 소비</div>
+    <div class="step-detail">
+      액션을 하나씩 pop<br>
+      각 액션이 이벤트 발행<br>
+      인터셉터가 요청 수정<br>
+      트리거가 새 액션 삽입
+    </div>
+  </div>
+</div>
+
+<div class="flow" style="margin-top:.5rem">
+  <div class="flow-step">
+    <div class="step-num">6단계</div>
+    <div class="step-title">사망 확인</div>
+    <div class="step-detail">
+      <code>DeathCheck</code> 이벤트<br>
+      죽은 적 제거<br>
+      플레이어 사망 확인 &rarr; 게임오버
+    </div>
+  </div>
+  <div class="flow-arrow">&rarr;</div>
+  <div class="flow-step">
+    <div class="step-num" style="color:var(--text-dim)">반복</div>
+    <div class="step-title" style="color:var(--text-dim)">입력으로 복귀?</div>
+    <div class="step-detail">
+      턴 종료 안 했으면<br>
+      &rarr; 3단계로 복귀<br>
+      턴 종료했으면 &rarr; 7단계
+    </div>
+  </div>
+  <div class="flow-arrow">&rarr;</div>
+  <div class="flow-step">
+    <div class="step-num">7단계</div>
+    <div class="step-title">턴 종료</div>
+    <div class="step-detail">
+      손패 전부 버리기<br>
+      <code>TurnEnd</code> 이벤트<br>
+      방어도 초기화 (바리케이드 제외)<br>
+      상태이상 틱 (독, 약화 -1)
+    </div>
+  </div>
+  <div class="flow-arrow">&rarr;</div>
+  <div class="flow-step" style="border-color:var(--accent-red)">
+    <div class="step-num" style="color:var(--accent-red)">8단계</div>
+    <div class="step-title" style="color:var(--accent-red)">적 행동</div>
+    <div class="step-detail">
+      각 적이 의도(Intent) 실행<br>
+      액션을 큐에 적재<br>
+      5단계와 동일하게 소비<br>
+      사망 확인 재실행
+    </div>
+  </div>
+  <div class="flow-arrow">&rarr;</div>
+  <div class="flow-step">
+    <div class="step-num">9단계</div>
+    <div class="step-title">의도 결정</div>
+    <div class="step-detail">
+      <code>EnemyIntentRolled</code><br>
+      AI 상태머신 + RNG<br>
+      새 의도 아이콘 표시<br>
+      &rarr; 다음 턴 시작으로
+    </div>
+  </div>
+</div>
+
+<h3>BattleEvent 타임라인 (전체 이벤트 순서)</h3>
+<div class="code-block"><span class="kw">enum class</span> <span class="ty">BattleEvent</span> {
+    <span class="cm">// ── 턴 생명주기 ──</span>
+    <span class="st">BattleStart</span>,           <span class="cm">// 전투 시작</span>
+    <span class="st">TurnStart</span>,             <span class="cm">// 턴 시작</span>
+
+    <span class="cm">// ── 드로우 단계 ──</span>
+    <span class="st">BeforeDraw</span>,            <span class="cm">// 드로우 직전</span>
+    <span class="st">AfterDraw</span>,             <span class="cm">// 드로우 직후</span>
+
+    <span class="cm">// ── 카드 사용 ──</span>
+    <span class="st">BeforeCardPlayed</span>,      <span class="cm">// 인터셉터가 비용 수정/취소 가능</span>
+    <span class="st">CardPlayed</span>,            <span class="cm">// 트리거 (쿠나이, 수리검...)</span>
+
+    <span class="cm">// ── 액션 결정 ──</span>
+    <span class="st">BeforeActionResolve</span>,   <span class="cm">// 액션 실행 직전</span>
+    <span class="st">BeforeDamage</span>,          <span class="cm">// 약화/취약이 여기서 수정</span>
+    <span class="st">AfterDamage</span>,           <span class="cm">// 가시, 잔상이 여기서 반응</span>
+    <span class="st">BeforeBlockGain</span>,       <span class="cm">// 방어도 획득 직전</span>
+    <span class="st">AfterBlockGain</span>,        <span class="cm">// 방어도 획득 직후</span>
+
+    <span class="cm">// ── 상태 변화 ──</span>
+    <span class="st">StatusApplied</span>,         <span class="cm">// 상태이상 부여됨</span>
+    <span class="st">StatusRemoved</span>,         <span class="cm">// 상태이상 제거됨</span>
+
+    <span class="cm">// ── 카드 이동 ──</span>
+    <span class="st">CardExhausted</span>,         <span class="cm">// 죽은 가지, 고통 면역</span>
+    <span class="st">CardDiscarded</span>,         <span class="cm">// 카드 버려짐</span>
+    <span class="st">CardDrawn</span>,             <span class="cm">// 카드 뽑힘</span>
+
+    <span class="cm">// ── 턴 종료 ──</span>
+    <span class="st">TurnEnd</span>,               <span class="cm">// 턴 종료</span>
+    <span class="st">EnemyIntentRolled</span>,     <span class="cm">// 적 의도 결정됨</span>
+
+    <span class="cm">// ── 사망 &amp; 종료 ──</span>
+    <span class="st">DeathCheck</span>,            <span class="cm">// 사망 확인</span>
+    <span class="st">BattleEnd</span>,             <span class="cm">// 전투 종료</span>
+};</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- 탭: 데미지 파이프라인 -->
+<!-- ============================================================ -->
+<div class="tab-panel" id="tab-damage">
+<h2>데미지 파이프라인 (요청 &rarr; 훅 체인 &rarr; 적용)</h2>
+
+<p style="color:var(--text-dim);font-size:.85rem;margin-bottom:1rem">
+  데미지는 절대 직접 적용하지 않는다. 항상 이 파이프라인을 통과한다.
+</p>
+
+<div class="pipeline">
+  <div class="pipe-node" style="border-color:var(--accent-green);color:var(--accent-green)">
+    카드 / 상태이상 / 적<br>
+    <small>DamageRequest 생성</small>
+  </div>
+  <div class="pipe-arrow">&rarr;</div>
+
+  <div class="pipe-hook">
+    <div class="pipe-hook-label">훅 1: 공격자 수정</div>
+    <div class="pipe-hook-box">
+      힘 (+amount)<br>
+      약화 (&times;0.75, 공격만)<br>
+      펜 닙 (&times;2)
+    </div>
+  </div>
+  <div class="pipe-arrow">&rarr;</div>
+
+  <div class="pipe-hook">
+    <div class="pipe-hook-label">훅 2: 공격자 유물</div>
+    <div class="pipe-hook-box">
+      손목 칼날 (비용0이면 +4)<br>
+      부츠 (비관통 피해 최소 5)
+    </div>
+  </div>
+  <div class="pipe-arrow">&rarr;</div>
+
+  <div class="pipe-hook">
+    <div class="pipe-hook-label">훅 3: 피격자 수정</div>
+    <div class="pipe-hook-box">
+      취약 (&times;1.5)<br>
+      무형 (1로 감소)<br>
+      보호막 (1회 무효)
+    </div>
+  </div>
+  <div class="pipe-arrow">&rarr;</div>
+
+  <div class="pipe-hook">
+    <div class="pipe-hook-label">훅 4: 피격자 유물</div>
+    <div class="pipe-hook-box">
+      토리이 (5 이하면 감소)<br>
+      텅스텐 봉 (-1)
+    </div>
+  </div>
+  <div class="pipe-arrow">&rarr;</div>
+
+  <div class="pipe-node" style="border-color:var(--accent-orange);color:var(--accent-orange)">
+    방어도 흡수<br>
+    <small>block -= amount<br>잔여 &rarr; HP로</small>
+  </div>
+  <div class="pipe-arrow">&rarr;</div>
+
+  <div class="pipe-node" style="border-color:var(--accent-red);color:var(--accent-red)">
+    HP 감소<br>
+    <small>hp -= 잔여<br>AfterDamage 발행</small>
+  </div>
+</div>
+
+<h3 style="margin-top:1.5rem">DamageRequest 구조체</h3>
+<div class="code-block"><span class="kw">struct</span> <span class="ty">DamageRequest</span> {
+    <span class="ty">EffectSource</span> source;        <span class="cm">// 효과 발신자</span>
+    <span class="ty">EntityId</span>     sourceEntity;   <span class="cm">// 공격 엔티티</span>
+    <span class="ty">EntityId</span>     targetEntity;   <span class="cm">// 피격 엔티티</span>
+    <span class="ty">int</span>          amount;         <span class="cm">// 피해량</span>
+    <span class="ty">DamageType</span>   type;           <span class="cm">// Attack / HP_Loss / Thorns</span>
+    <span class="ty">TagSet</span>       tags;           <span class="cm">// MultiHit, Unblockable...</span>
+    <span class="ty">CardInstance</span>* card;          <span class="cm">// 카드 아니면 nullptr</span>
+    <span class="ty">bool</span>         cancelled = <span class="kw">false</span>;   <span class="cm">// 인터셉터가 취소 가능</span>
+};
+
+<span class="cm">// 같은 패턴:</span>
+<span class="kw">struct</span> <span class="ty">BlockRequest</span> {
+    <span class="ty">EffectSource</span> source;        <span class="cm">// 효과 발신자</span>
+    <span class="ty">EntityId</span>     targetEntity;   <span class="cm">// 방어 대상</span>
+    <span class="ty">int</span>          amount;         <span class="cm">// 방어도 량</span>
+    <span class="ty">bool</span>         cancelled = <span class="kw">false</span>;
+};
+
+<span class="kw">struct</span> <span class="ty">DrawRequest</span> {
+    <span class="ty">EffectSource</span> source;        <span class="cm">// 효과 발신자</span>
+    <span class="ty">int</span>          count;          <span class="cm">// 드로우 장수</span>
+    <span class="ty">bool</span>         cancelled = <span class="kw">false</span>;   <span class="cm">// 드로우 불가 상태</span>
+};</div>
+
+<h3>인터셉터 우선순위 (고정 순서, 랜덤 아님)</h3>
+<table class="seq-table">
+  <tr><th>우선순위</th><th>분류</th><th>예시</th></tr>
+  <tr><td class="seq-num">100</td><td>고정 가산 (공격자)</td><td>힘, 민첩</td></tr>
+  <tr><td class="seq-num">200</td><td>곱연산 (공격자)</td><td>약화 (&times;0.75), 펜 닙 (&times;2)</td></tr>
+  <tr><td class="seq-num">300</td><td>공격자 유물 수정</td><td>손목 칼날, 정밀</td></tr>
+  <tr><td class="seq-num">400</td><td>곱연산 (피격자)</td><td>취약 (&times;1.5)</td></tr>
+  <tr><td class="seq-num">500</td><td>고정 감산 (피격자)</td><td>텅스텐 봉 (-1), 토리이</td></tr>
+  <tr><td class="seq-num">900</td><td>오버라이드 / 무효화</td><td>무형 (1로 설정), 보호막 (무효화)</td></tr>
+</table>
+</div>
+
+<!-- ============================================================ -->
+<!-- 탭: 예시 -->
+<!-- ============================================================ -->
+<div class="tab-panel" id="tab-example">
+<h2>예시: 약화 상태에서 Strike 사용 vs 취약 적</h2>
+
+<p style="color:var(--text-dim);font-size:.85rem;margin-bottom:1rem">
+  플레이어에게 <strong>약화(2턴)</strong>가 걸려있다. 적에게 <strong>취약(1턴)</strong>이 걸려있다.
+  플레이어가 <strong>Strike</strong> (6데미지, 1에너지)를 사용한다.
+</p>
+
+<table class="seq-table">
+  <tr>
+    <th style="width:30px">#</th>
+    <th style="width:130px">주체</th>
+    <th>동작</th>
+    <th>데이터</th>
+  </tr>
+  <tr>
+    <td class="seq-num">1</td>
+    <td class="seq-actor">플레이어</td>
+    <td class="seq-action">Strike 선택, 대상 Enemy[0]</td>
+    <td class="seq-data"></td>
+  </tr>
+  <tr>
+    <td class="seq-num">2</td>
+    <td class="seq-actor">카드 시스템</td>
+    <td class="seq-action">에너지 확인: 3 &ge; 1 (비용). 에너지 차감.</td>
+    <td class="seq-data">energy: 3 &rarr; 2</td>
+  </tr>
+  <tr>
+    <td class="seq-num">3</td>
+    <td class="seq-actor">EventBus</td>
+    <td class="seq-action"><code>BeforeCardPlayed</code> 발행</td>
+    <td class="seq-data">card=Strike, target=Enemy[0]</td>
+  </tr>
+  <tr>
+    <td class="seq-num">4</td>
+    <td class="seq-actor">카드 시스템</td>
+    <td class="seq-action">EffectDef 읽기 &rarr; Action{Damage, 6} 생성</td>
+    <td class="seq-data"></td>
+  </tr>
+  <tr>
+    <td class="seq-num">5</td>
+    <td class="seq-actor">ActionQueue</td>
+    <td class="seq-action"><code>pushBack(Action{Damage, src=Card(Strike), target=E0, value=6})</code></td>
+    <td class="seq-data">큐: [Damage(6)]</td>
+  </tr>
+  <tr>
+    <td class="seq-num">6</td>
+    <td class="seq-actor">EventBus</td>
+    <td class="seq-action"><code>CardPlayed</code> 발행</td>
+    <td class="seq-data">트리거 확인 (쿠나이 등) &mdash; 없음</td>
+  </tr>
+  <tr>
+    <td class="seq-num">7</td>
+    <td class="seq-actor">카드 시스템</td>
+    <td class="seq-action">Strike를 버린 더미로 이동</td>
+    <td class="seq-data">손패 &rarr; 버린 더미</td>
+  </tr>
+  <tr style="background:var(--surface)">
+    <td colspan="4" style="color:var(--accent-orange);font-weight:700;text-align:center;padding:.6rem">
+      &#x25BC; 액션 소비 시작 &#x25BC;
+    </td>
+  </tr>
+  <tr>
+    <td class="seq-num">8</td>
+    <td class="seq-actor">ActionQueue</td>
+    <td class="seq-action"><code>pop()</code> &rarr; Damage 액션 꺼냄</td>
+    <td class="seq-data">type=Damage, value=6, src=Card</td>
+  </tr>
+  <tr>
+    <td class="seq-num">9</td>
+    <td class="seq-actor">전투 해결기</td>
+    <td class="seq-action"><code>DamageRequest{amount=6, type=Attack}</code> 생성</td>
+    <td class="seq-data"></td>
+  </tr>
+  <tr>
+    <td class="seq-num">10</td>
+    <td class="seq-actor">EventBus</td>
+    <td class="seq-action"><code>BeforeDamage</code> 발행 &rarr; 인터셉터가 req 수정</td>
+    <td class="seq-data"></td>
+  </tr>
+  <tr>
+    <td class="seq-num">11</td>
+    <td class="seq-actor" style="color:var(--accent-orange)">약화 [p=200]</td>
+    <td class="seq-action">공격자가 플레이어 + 유형이 Attack &rarr; amount &times; 0.75</td>
+    <td class="seq-data">amount: 6 &rarr; 4 (내림)</td>
+  </tr>
+  <tr>
+    <td class="seq-num">12</td>
+    <td class="seq-actor" style="color:var(--accent-red)">취약 [p=400]</td>
+    <td class="seq-action">대상에 취약 + 유형이 Attack &rarr; amount &times; 1.5</td>
+    <td class="seq-data">amount: 4 &rarr; 6 (내림)</td>
+  </tr>
+  <tr>
+    <td class="seq-num">13</td>
+    <td class="seq-actor">전투 해결기</td>
+    <td class="seq-action">피해 적용: 방어도(0) 흡수 0, HP에 6 적용</td>
+    <td class="seq-data">적 HP: 46 &rarr; 40</td>
+  </tr>
+  <tr>
+    <td class="seq-num">14</td>
+    <td class="seq-actor">EventBus</td>
+    <td class="seq-action"><code>AfterDamage</code> 발행</td>
+    <td class="seq-data">반응형 트리거 없음 &mdash; 큐 비어있음</td>
+  </tr>
+  <tr>
+    <td class="seq-num">15</td>
+    <td class="seq-actor">ActionQueue</td>
+    <td class="seq-action">큐 비어있음. 플레이어 입력으로 복귀.</td>
+    <td class="seq-data"></td>
+  </tr>
+</table>
+</div>
+
+<!-- ============================================================ -->
+<!-- 탭: 덱 시스템 -->
+<!-- ============================================================ -->
+<div class="tab-panel" id="tab-deck">
+<h2>덱 시스템</h2>
+
+<h3>DeckState 구조</h3>
+<div class="grid-2">
+  <div class="class-box">
+    <div class="class-header" style="background:#1a2e3a"><span class="badge badge-class">클래스</span> DeckState</div>
+    <div class="class-body">
+      <div class="section-label">더미</div>
+      <div class="member"><code>vector&lt;CardInstance*&gt; drawPile</code> — 뽑기 더미</div>
+      <div class="member"><code>vector&lt;CardInstance*&gt; hand</code> — 손패</div>
+      <div class="member"><code>vector&lt;CardInstance*&gt; discardPile</code> — 버린 더미</div>
+      <div class="member"><code>vector&lt;CardInstance*&gt; exhaustPile</code> — 소멸 더미</div>
+      <div class="section-label">동작 (모두 ActionQueue 경유)</div>
+      <div class="member"><code>Draw(int count)</code> — 카드 뽑기</div>
+      <div class="member"><code>Discard(CardInstance*)</code> — 카드 버리기</div>
+      <div class="member"><code>Exhaust(CardInstance*)</code> — 카드 소멸</div>
+      <div class="member"><code>ShuffleDiscardIntoDraw()</code> — 버린 더미 셔플 후 뽑기 더미로</div>
+      <div class="member"><code>AddCardToHand(CardInstance*)</code> — 손패에 추가</div>
+    </div>
+  </div>
+  <div>
+    <h3>드로우 흐름</h3>
+    <div class="flow" style="flex-direction:column; align-items:stretch;">
+      <div class="flow-step" style="min-width:auto">
+        <div class="step-num">1</div>
+        <div class="step-title">Draw(N) 액션 pop</div>
+      </div>
+      <div class="flow-arrow" style="text-align:center">&darr;</div>
+      <div class="flow-step" style="min-width:auto">
+        <div class="step-num">2</div>
+        <div class="step-title">뽑기 더미 비었는가?</div>
+        <div class="step-detail">YES &rarr; 버린 더미 장수 확인.<br>버린 더미도 0장 &rarr; 중단 (카드 없음).<br>아니면 &rarr; pushFront(셔플),<br>그 다음 pushFront(Draw(남은 수))</div>
+      </div>
+      <div class="flow-arrow" style="text-align:center">&darr;</div>
+      <div class="flow-step" style="min-width:auto">
+        <div class="step-num">3</div>
+        <div class="step-title">EventBus: BeforeDraw</div>
+        <div class="step-detail">차단 여부 확인 (드로우 불가 상태) &rarr; 취소</div>
+      </div>
+      <div class="flow-arrow" style="text-align:center">&darr;</div>
+      <div class="flow-step" style="min-width:auto">
+        <div class="step-num">4</div>
+        <div class="step-title">최상단 카드 이동: 뽑기 더미 &rarr; 손패</div>
+        <div class="step-detail">CardDrawn 이벤트 발행 (진화: 상태 카드 드로우 시 1장 추가 뽑기)</div>
+      </div>
+      <div class="flow-arrow" style="text-align:center">&darr;</div>
+      <div class="flow-step" style="min-width:auto">
+        <div class="step-num">5</div>
+        <div class="step-title">손패 가득 참 (10장)?</div>
+        <div class="step-detail">hand.size() >= 10이면 &rarr; 뽑은 카드 즉시 버리기.<br>남은 드로우 수만큼 반복.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h3 style="margin-top:1.5rem">셔플: RNG 트랙 사용</h3>
+<div style="padding:.8rem; background:var(--surface); border-radius:var(--radius); border:1px solid var(--border); font-size:.85rem; color:var(--text-dim);">
+  <strong style="color:var(--accent-orange)">RNG 격리:</strong>
+  셔플은 전용 <code>shuffleRng</code> 트랙을 사용 (전투별 시드).
+  카드 보상은 <code>cardRewardRng</code>. 랜덤 타겟팅은 <code>miscRng</code>.
+  이렇게 하면 셔플 순서가 같은 시드에서 결정적이며, 다른 랜덤 이벤트의 영향을 받지 않는다.
+  <br><br>
+  현재 DX_Mine의 <code>Random</code> 클래스는 단일 <code>mt19937</code>.
+  STS용으로는 이름별 트랙 여러 개를 감싸면 된다:
+  <code>RngTracks { mt19937 shuffle, cardReward, misc, enemy; }</code>
+</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- 탭: 핵심 구조체 -->
+<!-- ============================================================ -->
+<div class="tab-panel" id="tab-structs">
+<h2>핵심 구조체 &amp; 열거형 (빠른 참조)</h2>
+
+<div class="grid-2">
+<div>
+<h3>EffectSource (효과 발신자)</h3>
+<div class="code-block"><span class="kw">enum class</span> <span class="ty">SourceType</span> {
+    System, Card, Status, Relic, Enemy
+};
+
+<span class="kw">struct</span> <span class="ty">EffectSource</span> {
+    <span class="ty">SourceType</span> type = <span class="ty">SourceType</span>::System;
+    <span class="kw">void</span>* source = <span class="kw">nullptr</span>;
+
+    <span class="kw">static</span> <span class="ty">EffectSource</span> <span class="fn">FromCard</span>(<span class="ty">CardInstance</span>* c);
+    <span class="kw">static</span> <span class="ty">EffectSource</span> <span class="fn">FromStatus</span>(<span class="ty">StatusInstance</span>* s);
+    <span class="kw">static</span> <span class="ty">EffectSource</span> <span class="fn">FromRelic</span>(<span class="ty">RelicInstance</span>* r);
+    <span class="kw">static</span> <span class="ty">EffectSource</span> <span class="fn">FromEnemy</span>(<span class="ty">EnemyState</span>* e);
+    <span class="kw">static</span> <span class="ty">EffectSource</span> <span class="fn">System</span>();
+};</div>
+
+<h3>EffectDef (효과 정의)</h3>
+<div class="code-block"><span class="kw">enum class</span> <span class="ty">Op</span> {
+    Damage, GainBlock, ApplyStatus,
+    Draw, Discard, Exhaust,
+    AddEnergy, LoseHP, Heal
+};
+
+<span class="kw">struct</span> <span class="ty">ValueExpr</span> {
+    <span class="ty">ValueKind</span> kind; <span class="cm">// Const, UpgradedPair, XCost,
+                     // RandomRange, PerStatus</span>
+    <span class="ty">int</span> a = <span class="num">0</span>, b = <span class="num">0</span>;
+    <span class="ty">StatusId</span> refStatus{};
+};
+
+<span class="kw">struct</span> <span class="ty">EffectDef</span> {
+    <span class="ty">Timing</span>          when;     <span class="cm">// OnPlay (기본값), OnDraw...</span>
+    <span class="ty">TargetSelector</span>  target;   <span class="cm">// Self, ChosenEnemy, All...</span>
+    <span class="ty">Op</span>              op;       <span class="cm">// 연산 종류</span>
+    <span class="ty">ValueExpr</span>       value;    <span class="cm">// 값 표현식</span>
+    <span class="ty">int</span>             repeat = <span class="num">1</span>; <span class="cm">// 반복 횟수</span>
+    <span class="ty">TagSet</span>          tags;     <span class="cm">// 태그 집합</span>
+};</div>
+
+<h3>Action (액션)</h3>
+<div class="code-block"><span class="kw">struct</span> <span class="ty">Action</span> {
+    <span class="kw">enum class</span> <span class="ty">Type</span> {
+        Damage, GainBlock, ApplyStatus,
+        RemoveStatus, Draw, Discard,
+        Exhaust, AddCardToHand,
+        AddEnergy, LoseHP, Heal,
+        ShuffleDiscardIntoDraw,
+        RollEnemyIntent,
+        WaitForInput, EndTurn,
+    };
+
+    <span class="ty">Type</span>           type;       <span class="cm">// 액션 종류</span>
+    <span class="ty">EffectSource</span>   source;     <span class="cm">// 발신자</span>
+    <span class="ty">EntityId</span>       targetId;   <span class="cm">// 대상</span>
+    <span class="ty">int</span>            value = <span class="num">0</span>;  <span class="cm">// 값</span>
+    <span class="ty">StatusId</span>       statusId{}; <span class="cm">// 상태이상 ID (해당 시)</span>
+    <span class="ty">CardInstance</span>*  card = <span class="kw">nullptr</span>; <span class="cm">// 카드 (해당 시)</span>
+};</div>
+</div>
+
+<div>
+<h3>ActionQueue (액션 큐)</h3>
+<div class="code-block"><span class="kw">class</span> <span class="ty">ActionQueue</span> {
+    std::deque&lt;<span class="ty">Action</span>&gt; _queue;
+<span class="kw">public</span>:
+    <span class="kw">void</span> <span class="fn">pushBack</span>(<span class="ty">Action</span> a);    <span class="cm">// 카드 효과 적재</span>
+    <span class="kw">void</span> <span class="fn">pushFront</span>(<span class="ty">Action</span> a);   <span class="cm">// 반응형 트리거 삽입</span>
+    <span class="ty">bool</span> <span class="fn">empty</span>() <span class="kw">const</span>;
+    <span class="ty">Action</span> <span class="fn">pop</span>();              <span class="cm">// 앞에서 꺼냄</span>
+};</div>
+
+<h3>CardDef / CardInstance (카드 정의 / 인스턴스)</h3>
+<div class="code-block"><span class="kw">struct</span> <span class="ty">CardDef</span> {
+    <span class="ty">CardId</span>     id;
+    <span class="ty">string</span>     name;         <span class="cm">// 카드 이름</span>
+    <span class="ty">CardType</span>   type;         <span class="cm">// 공격/스킬/파워/상태/저주</span>
+    <span class="ty">int</span>        baseCost;     <span class="cm">// 기본 에너지 비용</span>
+    <span class="ty">TargetRule</span> targetRule;   <span class="cm">// 대상 규칙</span>
+    vector&lt;<span class="ty">EffectDef</span>&gt; effects; <span class="cm">// 효과 목록</span>
+    <span class="ty">CardFlags</span>  flags;        <span class="cm">// 소멸/천상/선천/유지</span>
+    <span class="ty">CardId</span>     upgradedVersion; <span class="cm">// 업그레이드 버전 ID</span>
+};
+
+<span class="kw">struct</span> <span class="ty">CardInstance</span> {
+    <span class="kw">const</span> <span class="ty">CardDef</span>* def;       <span class="cm">// 정의 참조</span>
+    <span class="ty">int</span>  costDelta = <span class="num">0</span>;      <span class="cm">// 전투 중 비용 변동</span>
+    <span class="ty">bool</span> upgraded = <span class="kw">false</span>;   <span class="cm">// 업그레이드 여부</span>
+    <span class="ty">bool</span> retain = <span class="kw">false</span>;     <span class="cm">// 이번 턴 유지 여부</span>
+    <span class="ty">InstanceId</span> iid;          <span class="cm">// 인스턴스 고유 ID</span>
+};</div>
+
+<h3>주요 열거형</h3>
+<div class="code-block"><span class="kw">enum class</span> <span class="ty">CardType</span>       { Attack, Skill, Power, Status, Curse };
+                            <span class="cm">// 공격, 스킬, 파워, 상태, 저주</span>
+<span class="kw">enum class</span> <span class="ty">DamageType</span>     { Attack, HP_Loss, Thorns };
+                            <span class="cm">// 공격, HP 손실, 가시</span>
+<span class="kw">enum class</span> <span class="ty">TargetRule</span>     { Self, SingleEnemy, AllEnemies, Random, None };
+                            <span class="cm">// 자신, 단일적, 전체적, 무작위, 없음</span>
+<span class="kw">enum class</span> <span class="ty">StatusCategory</span> { Buff, Debuff, Special };
+                            <span class="cm">// 버프, 디버프, 특수</span>
+<span class="kw">enum class</span> <span class="ty">Timing</span>         { OnPlay, OnDraw, OnDiscard, OnExhaust,
+                            OnTurnStart, OnTurnEnd };
+                            <span class="cm">// 사용 시, 드로우 시, 버릴 때, 소멸 시,
+                            // 턴 시작, 턴 종료</span>
+<span class="kw">enum class</span> <span class="ty">ValueKind</span>     { Const, UpgradedPair, XCost,
+                            RandomRange, PerStatus, PercentOf };
+                            <span class="cm">// 상수, 업그레이드쌍, X비용,
+                            // 랜덤범위, 상태당, 퍼센트</span></div>
+</div>
+</div>
+</div>
+
+
+<!-- ===== 스크립트 ===== -->
+<script>
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+  });
+});
+</script>
+
+</body>
+</html>
