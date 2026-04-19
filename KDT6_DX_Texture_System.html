@@ -1,0 +1,1102 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KDT6_DX 텍스처 시스템 — 설명편 · 응용편</title>
+<style>
+:root {
+  --bg: #0e1117;
+  --surface: #161b22;
+  --surface2: #1c2129;
+  --border: #30363d;
+  --text: #c9d1d9;
+  --text-dim: #8b949e;
+  --accent-blue: #58a6ff;
+  --accent-green: #3fb950;
+  --accent-orange: #d29922;
+  --accent-red: #f85149;
+  --accent-purple: #bc8cff;
+  --accent-cyan: #39d2c0;
+  --accent-pink: #f778ba;
+  --radius: 8px;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Segoe UI', 'Malgun Gothic', sans-serif;
+  line-height: 1.65;
+  padding: 2rem;
+  max-width: 1100px;
+  margin: 0 auto;
+}
+h1 { color: var(--accent-blue); font-size: 1.8rem; margin-bottom: .3rem; }
+h2 {
+  color: var(--accent-orange);
+  font-size: 1.3rem;
+  margin: 2.5rem 0 1rem;
+  padding-bottom: .4rem;
+  border-bottom: 1px solid var(--border);
+}
+h3 {
+  color: var(--accent-green);
+  font-size: 1.05rem;
+  margin: 1.6rem 0 .6rem;
+}
+h4 {
+  color: var(--accent-cyan);
+  font-size: .95rem;
+  margin: 1rem 0 .4rem;
+}
+p { margin: .5rem 0; color: var(--text); }
+p + p { margin-top: .7rem; }
+ul, ol { margin: .5rem 0 .8rem 1.4rem; color: var(--text); }
+li { margin: .2rem 0; }
+strong { color: var(--accent-pink); }
+em { color: var(--accent-orange); }
+.subtitle { color: var(--text-dim); font-size: .95rem; margin-bottom: 2rem; }
+a { color: var(--accent-blue); text-decoration: none; }
+
+.tab-bar {
+  display: flex; gap: 4px;
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 4px;
+  margin-bottom: 2rem;
+  overflow-x: auto;
+  position: sticky; top: 0; z-index: 100;
+  border: 1px solid var(--border);
+}
+.tab-btn {
+  padding: .55rem 1.1rem;
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  border-radius: 6px;
+  font-size: .85rem;
+  white-space: nowrap;
+  transition: all .15s;
+  font-family: inherit;
+}
+.tab-btn:hover { color: var(--text); background: var(--surface2); }
+.tab-btn.active { color: #fff; background: var(--accent-blue); }
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+
+code.inline {
+  color: var(--accent-cyan);
+  background: var(--surface2);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-family: 'Consolas', monospace;
+  font-size: .85em;
+}
+
+.code-block {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem 1.1rem;
+  font-family: 'Consolas', 'Courier New', monospace;
+  font-size: .8rem;
+  overflow-x: auto;
+  line-height: 1.55;
+  white-space: pre;
+  color: var(--text-dim);
+  margin: .8rem 0;
+}
+.code-block .kw { color: var(--accent-purple); }
+.code-block .ty { color: var(--accent-blue); }
+.code-block .fn { color: var(--accent-green); }
+.code-block .cm { color: #484f58; font-style: italic; }
+.code-block .st { color: var(--accent-orange); }
+.code-block .num { color: var(--accent-cyan); }
+.code-block .pp { color: var(--accent-pink); }
+
+.callout {
+  border-left: 3px solid var(--accent-orange);
+  background: var(--surface);
+  padding: .6rem .9rem;
+  margin: .8rem 0;
+  border-radius: 0 var(--radius) var(--radius) 0;
+  font-size: .88rem;
+  color: var(--text);
+}
+.callout.warn { border-left-color: var(--accent-red); }
+.callout.tip  { border-left-color: var(--accent-green); }
+.callout.note { border-left-color: var(--accent-blue); }
+.callout .label {
+  display: inline-block;
+  font-weight: 700;
+  margin-right: .4rem;
+  color: var(--accent-orange);
+}
+.callout.warn .label { color: var(--accent-red); }
+.callout.tip  .label { color: var(--accent-green); }
+.callout.note .label { color: var(--accent-blue); }
+
+.pipeline {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  padding: 1rem;
+  background: var(--surface);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  overflow-x: auto;
+  margin: .8rem 0;
+}
+.pipe-node {
+  padding: .6rem .9rem;
+  border-radius: var(--radius);
+  font-size: .82rem;
+  text-align: center;
+  flex-shrink: 0;
+  border: 1px solid;
+  min-width: 140px;
+}
+.pipe-node .pipe-title { font-weight: 700; font-size: .85rem; }
+.pipe-node .pipe-sub { color: var(--text-dim); font-size: .72rem; margin-top: .2rem; }
+.pipe-cpu { border-color: var(--accent-blue); color: var(--accent-blue); background: #1f3a5f; }
+.pipe-ram { border-color: var(--accent-purple); color: var(--accent-purple); background: #2a1f3a; }
+.pipe-gpu { border-color: var(--accent-green); color: var(--accent-green); background: #1a3a1a; }
+.pipe-arrow {
+  font-size: 1.1rem;
+  color: var(--text-dim);
+  padding: 0 .5rem;
+  flex-shrink: 0;
+}
+
+.reg-table, .bug-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .82rem;
+  margin: .8rem 0;
+}
+.reg-table th, .bug-table th {
+  background: var(--surface);
+  color: var(--accent-blue);
+  padding: .5rem .7rem;
+  text-align: left;
+  border-bottom: 2px solid var(--accent-blue);
+  font-size: .8rem;
+}
+.reg-table td, .bug-table td {
+  padding: .45rem .7rem;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+.reg-table tr:hover, .bug-table tr:hover { background: var(--surface2); }
+.bug-table td:first-child { color: var(--accent-orange); font-weight: 600; }
+
+.dep-tree {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem 1.2rem;
+  font-family: 'Consolas', monospace;
+  font-size: .82rem;
+  line-height: 1.7;
+  color: var(--text);
+  margin: .8rem 0;
+}
+.dep-tree .node { color: var(--accent-green); font-weight: 700; }
+.dep-tree .arr { color: var(--accent-orange); }
+.dep-tree .note { color: var(--text-dim); }
+
+.call-chain {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem 1.2rem;
+  font-family: 'Consolas', monospace;
+  font-size: .8rem;
+  line-height: 1.7;
+  color: var(--text);
+  margin: .8rem 0;
+  white-space: pre;
+  overflow-x: auto;
+}
+.call-chain .fn { color: var(--accent-green); }
+.call-chain .step { color: var(--accent-orange); }
+.call-chain .slot { color: var(--accent-cyan); }
+
+.toc-mini {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: .8rem 1rem;
+  margin: 1rem 0 2rem;
+  font-size: .85rem;
+}
+.toc-mini .toc-title { color: var(--accent-orange); font-weight: 700; margin-bottom: .3rem; }
+.toc-mini ol { margin-left: 1.4rem; color: var(--text-dim); }
+.toc-mini li { margin: .1rem 0; }
+
+.file-group {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: .8rem 1rem;
+  margin: .6rem 0;
+}
+.file-group .grp-title {
+  color: var(--accent-pink);
+  font-weight: 700;
+  font-size: .9rem;
+  margin-bottom: .3rem;
+}
+.file-group code { color: var(--accent-cyan); font-family: 'Consolas', monospace; font-size: .82rem; }
+.file-group .desc { color: var(--text-dim); font-size: .8rem; }
+
+@media (max-width: 800px) {
+  body { padding: 1rem; }
+  .pipeline { flex-direction: column; }
+  .pipe-arrow { transform: rotate(90deg); padding: .3rem 0; }
+}
+</style>
+</head>
+<body>
+
+<h1>KDT6_DX 텍스처 시스템 — 설명편 · 응용편</h1>
+<p class="subtitle">강사님 수업 코드(KDT6_DX) 기준 — 파일이 쉐이더에 꽂히기까지의 전체 경로 정리</p>
+
+<!-- ===== 탭 바 ===== -->
+<div class="tab-bar" id="tabBar">
+  <button class="tab-btn active" data-tab="overview">개요</button>
+  <button class="tab-btn" data-tab="explain">1부. 설명편</button>
+  <button class="tab-btn" data-tab="apply">2부. 응용편</button>
+  <button class="tab-btn" data-tab="appendix">부록</button>
+</div>
+
+<!-- ============================================================ -->
+<!-- 탭: 개요 -->
+<!-- ============================================================ -->
+<div class="tab-panel active" id="tab-overview">
+<h2>한눈에 보기</h2>
+
+<p>디스크에 있는 PNG 한 장을 쉐이더가 샘플링하기까지는 <strong>3단계</strong>를 거친다.
+이 문서는 그 3단계를 담당하는 KDT6_DX의 클래스 묶음을 풀어쓰고(1부), 실제 게임 코드에서
+어떻게 쓰는지 시나리오로 설명한다(2부).</p>
+
+<h3>3단계 파이프라인</h3>
+<div class="pipeline">
+  <div class="pipe-node pipe-cpu">
+    <div class="pipe-title">① 파일</div>
+    <div class="pipe-sub">.png / .dds / .tga</div>
+  </div>
+  <div class="pipe-arrow">── DirectXTex ──▶</div>
+  <div class="pipe-node pipe-ram">
+    <div class="pipe-title">② ScratchImage</div>
+    <div class="pipe-sub">CPU(RAM) 픽셀</div>
+  </div>
+  <div class="pipe-arrow">── D3D11 ──▶</div>
+  <div class="pipe-node pipe-gpu">
+    <div class="pipe-title">③ SRV</div>
+    <div class="pipe-sub">GPU(VRAM) 핸들</div>
+  </div>
+</div>
+
+<p>각 단계를 담당하는 레이어:</p>
+<ul>
+  <li><strong>Texture</strong> — 파일 로드 + ScratchImage 보관 + SRV 생성/바인딩</li>
+  <li><strong>TextureManager</strong> — 이름으로 Texture 조회</li>
+  <li><strong>Material</strong> — 텍스처 + 픽셀 쉐이더 + 상수버퍼 + 샘플러를 한 덩어리로 묶음</li>
+  <li><strong>MaterialManager</strong> — 원본 머티리얼 레지스트리 + Clone 팩토리</li>
+  <li><strong>StaticMeshShader / MaterialPixelShader</strong> — VS/PS 래퍼</li>
+  <li><strong>ShaderManager</strong> — 상수버퍼 등록, 샘플러 생성, 쉐이더 활성화</li>
+</ul>
+
+<div class="toc-mini">
+  <div class="toc-title">이 문서의 구성</div>
+  <ol>
+    <li><strong>1부 설명편</strong> — 13개 절로 파이프라인을 파일→GPU 순서대로 해부</li>
+    <li><strong>2부 응용편</strong> — 10개 시나리오로 실제 코드에서 쓰는 방법</li>
+    <li><strong>부록 A</strong> — 초기화 의존성 요약</li>
+    <li><strong>부록 B</strong> — HLSL 레지스터 슬롯 테이블</li>
+    <li><strong>부록 C</strong> — 파일 목록</li>
+  </ol>
+</div>
+
+<div class="callout note">
+  <span class="label">NOTE</span>
+  상단의 탭으로 섹션을 이동한다. 스크롤은 각 탭 안에서만 일어나므로, 한 탭을 끝까지 읽은 후 다음 탭으로 넘어가면 된다.
+</div>
+</div>
+
+<!-- ============================================================ -->
+<!-- 탭: 1부 설명편 -->
+<!-- ============================================================ -->
+<div class="tab-panel" id="tab-explain">
+<h2>Part 1. 설명편 — 텍스처가 화면에 박히기까지</h2>
+
+<h3>1.1 큰 그림: 3단계 파이프라인</h3>
+<p>디스크에 있는 PNG 한 장을 쉐이더가 샘플링하기까지는 3단계를 거친다.</p>
+
+<div class="pipeline">
+  <div class="pipe-node pipe-cpu">
+    <div class="pipe-title">파일</div>
+    <div class="pipe-sub">.png / .dds / .tga</div>
+  </div>
+  <div class="pipe-arrow">── DirectXTex ──▶</div>
+  <div class="pipe-node pipe-ram">
+    <div class="pipe-title">DirectX::ScratchImage</div>
+    <div class="pipe-sub">CPU(RAM)</div>
+  </div>
+  <div class="pipe-arrow">── D3D11 ──▶</div>
+  <div class="pipe-node pipe-gpu">
+    <div class="pipe-title">ID3D11ShaderResourceView</div>
+    <div class="pipe-sub">GPU(VRAM)</div>
+  </div>
+</div>
+
+<p><strong>① 파일 → ScratchImage (CPU 로드)</strong><br>
+PNG/JPG는 <code class="inline">LoadFromWICFile</code>, DDS는 <code class="inline">LoadFromDDSFile</code>,
+TGA는 <code class="inline">LoadFromTGAFile</code>. 결과는 <code class="inline">DirectX::ScratchImage</code>에 담긴다.
+여기까지는 그냥 RAM에 박힌 픽셀 덩어리일 뿐, GPU는 아직 모른다.</p>
+
+<p><strong>② ScratchImage → SRV (GPU 업로드)</strong><br>
+<code class="inline">DirectX::CreateShaderResourceView</code>를 호출하면 ScratchImage의 픽셀을
+GPU VRAM으로 업로드하고, 쉐이더가 읽을 수 있는 핸들 <code class="inline">ID3D11ShaderResourceView</code>(SRV)로 감싼다.</p>
+
+<p><strong>③ SRV → 쉐이더 바인딩 (드로우 직전)</strong><br>
+드로우 콜마다 <code class="inline">VSSetShaderResources</code> / <code class="inline">PSSetShaderResources</code>로
+SRV를 특정 레지스터(<code class="inline">t0</code>, <code class="inline">t1</code>…)에 꽂아 넣는다.
+이때부터 HLSL에서 <code class="inline">Texture2D gBaseTexture : register(t0)</code>가 유효해진다.</p>
+
+<p>이 3단계를 각각 담당하는 클래스가 <code class="inline">Texture</code>이고, 그걸 이름으로 찾기 쉽게
+묶은 게 <code class="inline">TextureManager</code>. 그 위에 재질 개념을 입힌 게 <code class="inline">Material</code>이다.</p>
+
+<h3>1.2 DirectXTex — Microsoft 공식 텍스처 로더</h3>
+<p>DirectX11 자체는 이미지 디코딩 기능이 없다. <code class="inline">.png</code>를 들고 와서
+<code class="inline">ID3D11Device::CreateTexture2D(... 어떤 바이트 포인터 ...)</code>로 넘겨야 하는데,
+"PNG에서 픽셀 바이트를 뽑아내는" 과정이 필요하다.</p>
+
+<p><strong>DirectXTex</strong>는 Microsoft가 오픈소스로 푼 디코딩 레이어다.
+PNG/JPG/BMP/TIFF는 WIC 기반으로, DDS/TGA는 자체 파서로 읽어온다.</p>
+
+<ul>
+  <li>리포지토리: <code class="inline">https://github.com/microsoft/DirectXTex</code></li>
+  <li>KDT6_DX는 <strong>사전 빌드된 .lib</strong>를 <code class="inline">KDT6_DX/Game2D/ThirdParty/</code>에 담아둔다.
+    <ul>
+      <li><code class="inline">DirectXTex.h</code>, <code class="inline">DirectXTex.inl</code> (헤더)</li>
+      <li><code class="inline">DirectXTex.lib</code> (릴리즈)</li>
+      <li><code class="inline">DirectXTex_Debug.lib</code> (디버그)</li>
+    </ul>
+  </li>
+</ul>
+
+<p><code class="inline">Texture.cpp</code> 상단의 <code class="inline">#pragma comment(lib, ...)</code>가 디버그/릴리즈를 전환해 준다.</p>
+
+<div class="code-block"><span class="pp">#ifdef</span> _DEBUG
+<span class="pp">#pragma</span> comment(lib, <span class="st">"DirectXTex_Debug.lib"</span>)
+<span class="pp">#else</span>
+<span class="pp">#pragma</span> comment(lib, <span class="st">"DirectXTex.lib"</span>)
+<span class="pp">#endif</span></div>
+
+<div class="callout warn">
+  <span class="label">⚠ WARN</span>
+  최신 DirectXTex를 직접 빌드해서 쓸 경우, Debug 구성도 파일명이 그냥 <code class="inline">DirectXTex.lib</code> 하나로 떨어진다.
+  <code class="inline">_Debug</code> 접미사는 KDT6_DX가 번들로 들고 있는 구버전 빌드에서만 유효하다.
+</div>
+
+<h3>1.3 FTextureInfo 구조체 — 텍스처 한 장의 모든 것</h3>
+<div class="code-block"><span class="kw">struct</span> <span class="ty">FTextureInfo</span>
+{
+    <span class="ty">DirectX::ScratchImage</span>            _image;     <span class="cm">// CPU 픽셀 데이터</span>
+    <span class="ty">ComPtr</span>&lt;<span class="ty">ID3D11ShaderResourceView</span>&gt; _srv;       <span class="cm">// GPU 핸들</span>
+    <span class="ty">uint32</span>                           _width;
+    <span class="ty">uint32</span>                           _height;
+    <span class="ty">std::wstring</span>                     _fileName;
+};</div>
+
+<ul>
+  <li><code class="inline">_image</code>는 CPU 쪽 데이터이므로 SRV를 만든 뒤에는 사실상 다시 쓸 일이 없다.
+    남겨두는 이유는 (a) 디버깅용, (b) 나중에 밉맵 재생성 등 재처리가 필요할 때,
+    (c) SRV가 파괴되고 재생성되어야 할 때 원본을 다시 업로드할 수 있게 하기 위함.</li>
+  <li><code class="inline">_srv</code>는 실제로 쉐이더에 꽂아넣는 객체. <code class="inline">ComPtr</code>이라서 소멸 시 자동 해제.</li>
+  <li><code class="inline">_width/_height</code>는 상수버퍼(<code class="inline">FMaterialCBufferData</code>)에 넘겨주기 위해 캐싱.</li>
+</ul>
+
+<h3>1.4 Texture 클래스 — 3단계 로직의 구현체</h3>
+<div class="code-block"><span class="kw">class</span> <span class="ty">Texture</span> : <span class="kw">public</span> <span class="ty">Asset</span>
+{
+<span class="kw">protected</span>:
+    <span class="ty">std::vector</span>&lt;<span class="ty">FTextureInfo</span>&gt; _textureInfos;   <span class="cm">// 한 Texture가 여러 장 가질 수도 있음</span>
+
+<span class="kw">public</span>:
+    <span class="ty">bool</span> <span class="fn">LoadTexture</span>(<span class="kw">const</span> <span class="ty">std::wstring</span>&amp; fileName);
+    <span class="ty">void</span> <span class="fn">SetShader</span>(<span class="ty">int32</span> registerNum, <span class="ty">int32</span> shaderBufferType, <span class="ty">int32</span> textureIndex);
+    <span class="ty">void</span> <span class="fn">ResetShader</span>(<span class="ty">int32</span> registerNum, <span class="ty">int32</span> shaderBufferType);
+
+<span class="kw">protected</span>:
+    <span class="ty">bool</span> <span class="fn">CreateResourceView</span>(<span class="ty">int32</span> idx);
+};</div>
+
+<h4>LoadTexture(fileName) — 1단계 + 2단계</h4>
+<div class="code-block"><span class="ty">bool</span> <span class="fn">Texture::LoadTexture</span>(<span class="kw">const</span> <span class="ty">std::wstring</span>&amp; fileName)
+{
+    <span class="cm">// ① Resources/Texture 아래에서 파일 경로 해석</span>
+    <span class="ty">std::filesystem::path</span> filePath;
+    <span class="kw">auto</span> resPath = <span class="fn">DirectoryManager::Instance</span>().<span class="fn">GetPath</span>(<span class="st">"Resources"</span>);
+    <span class="fn">DirectoryManager::Instance</span>().<span class="fn">GetDiretory</span>(resPath.<span class="fn">value</span>(), <span class="st">"Texture"</span>, filePath);
+    <span class="fn">DirectoryManager::Instance</span>().<span class="fn">GetFile</span>(filePath, fileName, filePath);
+
+    <span class="cm">// ② 확장자에 따라 로더 선택</span>
+    <span class="ty">FTextureInfo</span> texture;
+    <span class="kw">if</span> (<span class="fn">DirectoryManager::Instance</span>().<span class="fn">IsExtension</span>(filePath, <span class="st">".DDS"</span>))
+        <span class="fn">DirectX::LoadFromDDSFile</span>(filePath.<span class="fn">wstring</span>().<span class="fn">c_str</span>(), DirectX::DDS_FLAGS_NONE, <span class="kw">nullptr</span>, texture._image);
+    <span class="kw">else if</span> (<span class="fn">DirectoryManager::Instance</span>().<span class="fn">IsExtension</span>(filePath, <span class="st">".TGA"</span>))
+        <span class="fn">DirectX::LoadFromTGAFile</span>(filePath.<span class="fn">wstring</span>().<span class="fn">c_str</span>(), <span class="kw">nullptr</span>, texture._image);
+    <span class="kw">else</span>
+        <span class="fn">DirectX::LoadFromWICFile</span>(filePath.<span class="fn">wstring</span>().<span class="fn">c_str</span>(), DirectX::WIC_FLAGS_NONE, <span class="kw">nullptr</span>, texture._image);
+
+    <span class="cm">// ③ 메타데이터 캐싱</span>
+    texture._fileName = fileName;
+    texture._width  = texture._image.<span class="fn">GetImages</span>()-&gt;width;
+    texture._height = texture._image.<span class="fn">GetImages</span>()-&gt;height;
+
+    _textureInfos.<span class="fn">emplace_back</span>(<span class="fn">std::move</span>(texture));
+
+    <span class="cm">// ④ GPU 업로드 + SRV 생성</span>
+    <span class="kw">return</span> <span class="fn">CreateResourceView</span>(_textureInfos.<span class="fn">size</span>() - <span class="num">1</span>);
+}</div>
+
+<div class="callout warn">
+  <span class="label">⚠ BUG</span>
+  <code class="inline">DirectoryManager::IsExtension</code>이 <code class="inline">std::string::compare</code>의 반환값을
+  잘못 해석한 탓에 이전 버전에서는 항상 뒤집힌 결과를 내고 있었다. 수업 도중에 수정되었으니, 본인 프로젝트에서도
+  <code class="inline">==</code> 비교로 되어 있는지 반드시 확인할 것.
+</div>
+
+<h4>CreateResourceView(idx) — 2단계 한 줄 요약</h4>
+<div class="code-block"><span class="fn">DirectX::CreateShaderResourceView</span>(
+    <span class="fn">Device::Instance</span>().<span class="fn">GetDevice</span>().<span class="fn">Get</span>(),       <span class="cm">// ID3D11Device*</span>
+    _textureInfos[idx]._image.<span class="fn">GetImages</span>(),      <span class="cm">// 이미지 픽셀</span>
+    _textureInfos[idx]._image.<span class="fn">GetImageCount</span>(),
+    _textureInfos[idx]._image.<span class="fn">GetMetadata</span>(),
+    _textureInfos[idx]._srv.<span class="fn">GetAddressOf</span>()        <span class="cm">// 결과 SRV</span>
+);</div>
+
+<h4>SetShader(regi, type, idx) — 3단계, 드로우 직전</h4>
+<div class="code-block"><span class="ty">void</span> <span class="fn">Texture::SetShader</span>(<span class="ty">int32</span> registerNum, <span class="ty">int32</span> shaderBufferType, <span class="ty">int32</span> textureIndex)
+{
+    <span class="kw">if</span> (shaderBufferType &amp; SHADER_TYPE::VERTEX)
+        context-&gt;<span class="fn">VSSetShaderResources</span>(registerNum, <span class="num">1</span>, _textureInfos[textureIndex]._srv.<span class="fn">GetAddressOf</span>());
+
+    <span class="kw">if</span> (shaderBufferType &amp; SHADER_TYPE::PIXEL)
+        context-&gt;<span class="fn">PSSetShaderResources</span>(registerNum, <span class="num">1</span>, _textureInfos[textureIndex]._srv.<span class="fn">GetAddressOf</span>());
+}</div>
+
+<p><code class="inline">SHADER_TYPE::VERTEX | PIXEL</code> 비트 플래그로 어느 단계에 꽂을지 지정한다. 대부분 픽셀 쉐이더에만 바인딩.</p>
+
+<p><strong>ResetShader(regi, type)</strong>는 드로우 끝난 뒤 해당 슬롯을 nullptr로 리셋한다.
+안 해주면 "예전 드로우에서 꽂아뒀던 SRV가 다음 드로우에서도 유효"해져서 엉뚱한 텍스처가 출력되거나
+리소스 해제가 지연되는 문제가 생긴다.</p>
+
+<h3>1.5 TextureManager — 이름으로 찾는 에셋 매니저</h3>
+<div class="code-block"><span class="kw">class</span> <span class="ty">TextureManager</span> : <span class="kw">public</span> <span class="ty">SubManager</span>
+{
+    <span class="ty">std::unordered_map</span>&lt;<span class="ty">std::string</span>, <span class="ty">Ptr</span>&lt;<span class="ty">Texture</span>&gt;&gt; _textures;
+
+<span class="kw">public</span>:
+    <span class="ty">bool</span> <span class="fn">Init</span>();
+    <span class="ty">bool</span> <span class="fn">LoadTexture</span>(<span class="kw">const</span> <span class="ty">std::string</span>&amp; name, <span class="kw">const</span> <span class="ty">std::wstring</span>&amp; fileName);
+    <span class="ty">Ptr</span>&lt;<span class="ty">Texture</span>&gt; <span class="fn">FindTexture</span>(<span class="kw">const</span> <span class="ty">std::string</span>&amp; name);
+    <span class="kw">virtual</span> <span class="ty">void</span> <span class="fn">Destroy</span>() <span class="kw">override</span>;
+};</div>
+
+<ul>
+  <li><code class="inline">AssetManager</code>에 <code class="inline">eAssetType::TEXTURE</code>로 등록된다.</li>
+  <li>게임 코드에서는 <code class="inline">TEXTURE_MANAGER-&gt;FindTexture("muzi")</code> 한 줄로 조회.</li>
+  <li><code class="inline">LoadTexture("muzi", L"muzi-removebg-preview.png")</code> 처럼
+    <strong>논리 이름</strong>과 <strong>실제 파일명</strong>을 분리해서 등록한다. 파일명이 바뀌어도 게임 코드는 안 건드림.</li>
+</ul>
+
+<p>등록 순서가 중요하다. <code class="inline">AssetManager::Init</code>에서는 <strong>Texture → Material → Mesh</strong> 순으로 등록된다.
+Mesh가 <code class="inline">DefaultMaterial</code>을 참조하기 때문에 MaterialManager가 먼저 살아 있어야 하고, 그 MaterialManager는
+ShaderManager의 <code class="inline">Material</code> 상수버퍼를 참조하기 때문에 <strong>ShaderManager도 AssetManager보다 먼저 Init해야 한다</strong>.</p>
+
+<div class="code-block"><span class="cm">// GameEngine::InitManager — 순서가 생명</span>
+<span class="fn">ShaderManager::Instance</span>().<span class="fn">Init</span>();
+<span class="fn">AssetManager::Instance</span>().<span class="fn">Init</span>();   <span class="cm">// 내부에서 Texture/Material/Mesh 순</span></div>
+
+<h3>1.6 샘플러 — 픽셀을 "어떻게" 읽을지 정하는 규칙</h3>
+<p>텍스처 자체는 픽셀 덩어리일 뿐이다. 메쉬의 UV 좌표 <code class="inline">(0.37, 0.82)</code>를 받았을 때
+"그 위치의 색은 무엇인가?"를 결정하는 건 <strong>샘플러</strong>다.</p>
+
+<p><code class="inline">ShaderManager</code>는 Init 시점에 3종류 샘플러를 만들어 <code class="inline">_samplers[3]</code>에 캐싱한다.</p>
+
+<div class="code-block"><span class="ty">ComPtr</span>&lt;<span class="ty">ID3D11SamplerState</span>&gt; _samplers[TEXURE_SAMPLE_END];
+
+<span class="ty">void</span> <span class="fn">ShaderManager::CreateSampler</span>()
+{
+    <span class="ty">D3D11_SAMPLER_DESC</span> desc = {};
+    desc.AddressU = desc.AddressV = desc.AddressW = D3D11_TEXTURE_ADDRESS_WRAP;
+    desc.MinLOD = <span class="num">0</span>;
+    desc.MaxLOD = D3D11_FLOAT32_MAX;
+
+    <span class="cm">// 포인트: 가장 가까운 1픽셀. 픽셀 아트에 적합.</span>
+    desc.Filter = D3D11_FILTER_MIN_MAG_MIP_POINT;
+    device-&gt;<span class="fn">CreateSamplerState</span>(&amp;desc, _samplers[TEXTURE_SAMPLE_POINT].<span class="fn">GetAddressOf</span>());
+
+    <span class="cm">// 선형: 주변 4픽셀 가중 평균. 부드럽지만 픽셀 아트엔 부적합.</span>
+    desc.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+    device-&gt;<span class="fn">CreateSamplerState</span>(&amp;desc, _samplers[TEXTURE_SAMPLE_LINEAR].<span class="fn">GetAddressOf</span>());
+
+    <span class="cm">// 이방성: 경사진 표면에서 선명. 2D에서는 거의 쓰지 않음.</span>
+    desc.Filter = D3D11_FILTER_ANISOTROPIC;
+    desc.MaxAnisotropy = <span class="num">16</span>;
+    device-&gt;<span class="fn">CreateSamplerState</span>(&amp;desc, _samplers[TEXTURE_SAMPLE_ANISOTROPIC].<span class="fn">GetAddressOf</span>());
+}</div>
+
+<ul>
+  <li><code class="inline">AddressU/V/W = WRAP</code>: UV가 1을 넘어가면 다시 0부터 반복(타일링).
+    CLAMP로 바꾸면 경계 픽셀이 늘어나고, MIRROR로 바꾸면 좌우반전 반복.</li>
+  <li><code class="inline">SetSample(type)</code> 호출 시 <code class="inline">PSSetSamplers(0, 1, ...)</code>로 슬롯 <code class="inline">s0</code>에 꽂는다.</li>
+</ul>
+
+<h3>1.7 상수버퍼 FMaterialCBufferData — 재질 파라미터를 GPU로</h3>
+<div class="code-block"><span class="kw">struct</span> <span class="ty">FMaterialCBufferData</span>
+{
+    <span class="ty">FVector4D</span> _baseColor;   <span class="cm">// 전체 색조</span>
+    <span class="ty">float</span>     _opacity;     <span class="cm">// 투명도</span>
+    <span class="ty">int32</span>     _textureWidth;
+    <span class="ty">int32</span>     _textureHeight;
+    <span class="ty">float</span>     _empty;       <span class="cm">// 16바이트 정렬용 패딩</span>
+};</div>
+
+<p>상수버퍼는 <strong>16바이트(=float4) 경계에 정렬되어야 한다</strong>. 위 구조체는
+<code class="inline">float4(16) + float(4) + int(4) + int(4) + float(4) = 32바이트</code>로
+이미 16의 배수지만, 강사님 스타일은 항상 명시적으로 <code class="inline">_empty</code>를 넣어 뒀다.</p>
+
+<div class="callout note">
+  <span class="label">📝 NOTE</span>
+  강사님 원본 코드에는 <code class="inline">_basaColor</code>, <code class="inline">_textureWidht</code> 같은 오타가 그대로 있다.
+  본인 프로젝트로 옮길 때는 가독성을 위해 <code class="inline">_baseColor</code>, <code class="inline">_textureWidth</code>로 수정해도 무방.
+</div>
+
+<p>HLSL 쪽 대응(<code class="inline">Share.fx</code>):</p>
+<div class="code-block"><span class="kw">cbuffer</span> <span class="ty">Material</span> : <span class="kw">register</span>(b1)
+{
+    <span class="ty">float4</span> gMtrlBaseColor;
+    <span class="ty">float</span>  gMtrlOpacity;
+    <span class="ty">int</span>    gMtrlTextureWidth;
+    <span class="ty">int</span>    gMtrlTextureHeight;
+    <span class="ty">float</span>  gEmpty;
+}</div>
+
+<p><code class="inline">register(b1)</code>인 이유는 <code class="inline">Transform</code>이 VS의 <code class="inline">b0</code>, <code class="inline">Color</code>가 PS의 <code class="inline">b0</code>를
+이미 쓰고 있기 때문이다. VS와 PS의 <code class="inline">b0</code>는 슬롯이 분리되어 있어서 충돌하지 않지만,
+같은 PS 안에서는 <code class="inline">Color</code>와 <code class="inline">Material</code>이 겹칠 수 없으므로 <code class="inline">Material</code>을 <code class="inline">b1</code>로 밀었다.</p>
+
+<h3>1.8 MaterialCBuffer — CPU → GPU 복사 어댑터</h3>
+<div class="code-block"><span class="kw">class</span> <span class="ty">MaterialCBuffer</span> : <span class="kw">public</span> <span class="ty">CBuffer</span>
+{
+    <span class="ty">FMaterialCBufferData</span> _data;
+<span class="kw">public</span>:
+    <span class="kw">virtual</span> <span class="ty">void</span> <span class="fn">Update</span>() <span class="kw">override</span> { <span class="fn">SetData</span>(&amp;_data); }
+
+    <span class="ty">void</span> <span class="fn">SetBaseColor</span>(<span class="kw">const</span> <span class="ty">FVector4D</span>&amp; color);
+    <span class="ty">void</span> <span class="fn">SetOpacity</span>(<span class="ty">float</span> op);
+    <span class="ty">void</span> <span class="fn">SetTextureWidth</span>(<span class="ty">int32</span> w);
+    <span class="ty">void</span> <span class="fn">SetTextureHeight</span>(<span class="ty">int32</span> h);
+};</div>
+
+<p>CPU 쪽 <code class="inline">_data</code>를 수정하는 세터들이 있고, <code class="inline">Update()</code>가 호출될 때
+부모 <code class="inline">CBuffer::SetData</code>가 <code class="inline">UpdateSubresource</code> 류의 호출로 GPU 상수버퍼를 덮어쓴다.
+즉 <strong>"세터 호출"만으로는 아직 GPU는 모른다</strong>. <code class="inline">Material::SetMaterial()</code> 내부에서
+<code class="inline">_buffer-&gt;Update()</code>까지 밟아야 실제로 전송된다.</p>
+
+<h3>1.9 Material — 텍스처 + 쉐이더 + 상수버퍼 + 샘플러 묶음</h3>
+<div class="code-block"><span class="kw">class</span> <span class="ty">Material</span> : <span class="kw">public</span> <span class="ty">Asset</span>
+{
+    <span class="kw">friend class</span> <span class="ty">MaterialManager</span>;
+
+<span class="kw">protected</span>:
+    <span class="ty">std::vector</span>&lt;<span class="ty">FMaterialTextureInfo</span>&gt; _textures;   <span class="cm">// 여러 장 바인딩 가능</span>
+    <span class="ty">Ptr</span>&lt;<span class="ty">Shader</span>&gt;          _pixelShader;             <span class="cm">// 어떤 PS를 쓸지</span>
+    <span class="ty">Ptr</span>&lt;<span class="ty">MaterialCBuffer</span>&gt; _buffer;                  <span class="cm">// 어떤 cbuffer를 쓸지</span>
+    <span class="ty">eTextureSampleType</span>   _sampleType;
+    <span class="ty">FVector4D</span>            _baseColor = {<span class="num">1</span>,<span class="num">1</span>,<span class="num">1</span>,<span class="num">1</span>};
+    <span class="ty">float</span>                _opacity  = <span class="num">1.f</span>;
+
+<span class="kw">public</span>:
+    <span class="ty">void</span> <span class="fn">SetBaseColor</span>(<span class="kw">const</span> <span class="ty">FVector4D</span>&amp; color);
+    <span class="ty">void</span> <span class="fn">SetOpacity</span>(<span class="ty">float</span> op);
+    <span class="ty">void</span> <span class="fn">SetSamplerType</span>(<span class="ty">eTextureSampleType</span> type);
+
+    <span class="ty">void</span> <span class="fn">AddTexture</span>(<span class="ty">Ptr</span>&lt;<span class="ty">Texture</span>&gt; t, <span class="ty">int32</span> regi, <span class="ty">int32</span> type = SHADER_TYPE::PIXEL, <span class="ty">int32</span> idx = <span class="num">0</span>);
+    <span class="ty">void</span> <span class="fn">AddTexture</span>(<span class="kw">const</span> <span class="ty">std::string</span>&amp; name, <span class="ty">int32</span> regi, ...);
+    <span class="ty">void</span> <span class="fn">SetPixelShader</span>(<span class="kw">const</span> <span class="ty">std::string</span>&amp; name);
+
+    <span class="ty">void</span> <span class="fn">SetMaterial</span>();    <span class="cm">// 드로우 직전 호출</span>
+    <span class="ty">void</span> <span class="fn">ResetMaterial</span>();  <span class="cm">// 드로우 직후 호출</span>
+
+    <span class="ty">Ptr</span>&lt;<span class="ty">Material</span>&gt; <span class="fn">Clone</span>(); <span class="cm">// 복사본 생성(값 공유 방지)</span>
+};</div>
+
+<p><strong>SetMaterial()의 내부 흐름</strong>이 이 시스템 전체의 하이라이트다.</p>
+
+<div class="code-block"><span class="ty">void</span> <span class="fn">Material::SetMaterial</span>()
+{
+    <span class="cm">// ① CPU 파라미터 → cbuffer 구조체 → GPU 전송</span>
+    _buffer-&gt;<span class="fn">SetBaseColor</span>(_baseColor);
+    _buffer-&gt;<span class="fn">SetOpacity</span>(_opacity);
+    _buffer-&gt;<span class="fn">Update</span>();
+
+    <span class="cm">// ② 이 머티리얼이 쓸 샘플러를 s0에 바인딩</span>
+    <span class="fn">ShaderManager::Instance</span>().<span class="fn">SetSample</span>(_sampleType);
+
+    <span class="cm">// ③ 이 머티리얼의 픽셀 쉐이더를 활성화</span>
+    _pixelShader-&gt;<span class="fn">SetShader</span>();
+
+    <span class="cm">// ④ 이 머티리얼이 보유한 모든 텍스처를 지정 레지스터에 꽂음</span>
+    <span class="kw">for</span> (<span class="kw">auto</span>&amp; info : _textures)
+    {
+        <span class="ty">Ptr</span>&lt;<span class="ty">Texture</span>&gt; tex = <span class="fn">Lock</span>&lt;<span class="ty">Texture</span>&gt;(info._texture);
+        tex-&gt;<span class="fn">SetShader</span>(info._registerNum, info._shaderBufferType, info._textureIndex);
+    }
+}</div>
+
+<p>즉 한 번의 <code class="inline">SetMaterial()</code> 호출로 <strong>cbuffer 업로드 → 샘플러 바인딩 →
+PS 스위치 → SRV 바인딩</strong>이 한 번에 끝난다. 이게 "재질"이라는 추상화의 본질이다.</p>
+
+<p><code class="inline">Clone()</code>은 왜 필요한가? 같은 <code class="inline">DefaultMaterial</code>을 여러 액터가 써도
+<strong>각 액터가 다른 색조/투명도를 가지기 위해서다</strong>. 만약 공유 포인터로 동일 인스턴스를 쓰면
+플레이어가 반투명해질 때 몬스터도 같이 반투명해진다. <code class="inline">MaterialManager</code>는 <strong>원본 머티리얼을 이름으로 관리</strong>하고,
+<strong>사용 시점에는 <code class="inline">CreateMaterialInstance</code>가 복사본을 돌려준다</strong>.</p>
+
+<h3>1.10 MaterialManager — 재질 레지스트리</h3>
+<div class="code-block"><span class="kw">class</span> <span class="ty">MaterialManager</span> : <span class="kw">public</span> <span class="ty">SubManager</span>
+{
+    <span class="ty">std::unordered_map</span>&lt;<span class="ty">std::string</span>, <span class="ty">Ptr</span>&lt;<span class="ty">Material</span>&gt;&gt; _materials;
+
+<span class="kw">public</span>:
+    <span class="ty">bool</span> <span class="fn">Init</span>()
+    {
+        <span class="kw">return</span> <span class="fn">CreateMaterial</span>(
+            <span class="st">"DefaultMaterial"</span>,
+            <span class="st">"MaterialPixelShader"</span>,
+            eTextureSampleType::TEXTURE_SAMPLE_LINEAR);
+    }
+
+    <span class="ty">bool</span> <span class="fn">CreateMaterial</span>(<span class="kw">const</span> <span class="ty">std::string</span>&amp; name, <span class="kw">const</span> <span class="ty">std::string</span>&amp; psName, <span class="ty">eTextureSampleType</span> t);
+    <span class="ty">Ptr</span>&lt;<span class="ty">Material</span>&gt; <span class="fn">CreateMaterialInstance</span>(<span class="kw">const</span> <span class="ty">std::string</span>&amp; name);  <span class="cm">// Clone 리턴</span>
+    <span class="ty">Ptr</span>&lt;<span class="ty">Material</span>&gt; <span class="fn">FindMaterial</span>(<span class="kw">const</span> <span class="ty">std::string</span>&amp; name);            <span class="cm">// 원본 리턴</span>
+};</div>
+
+<p><code class="inline">CreateMaterial</code>이 핵심이다.</p>
+
+<div class="code-block"><span class="ty">Ptr</span>&lt;<span class="ty">Material</span>&gt; mat = <span class="fn">New</span>&lt;<span class="ty">Material</span>&gt;();
+mat-&gt;<span class="fn">SetName</span>(name);
+mat-&gt;<span class="fn">SetSamplerType</span>(sampleType);
+mat-&gt;<span class="fn">SetPixelShader</span>(pixelShader);
+mat-&gt;_buffer = <span class="fn">ShaderManager::Instance</span>().<span class="fn">FindCBuffer</span>&lt;<span class="ty">MaterialCBuffer</span>&gt;(<span class="st">"Material"</span>);
+_materials[name] = mat;</div>
+
+<p><code class="inline">mat-&gt;_buffer</code>에 <code class="inline">friend class MaterialManager</code> 권한으로 직접 접근한다.
+<strong>이 한 줄 때문에 ShaderManager가 AssetManager보다 먼저 Init해야 한다.</strong>
+순서가 뒤집히면 <code class="inline">FindCBuffer</code>가 nullptr을 반환해 조용히 렌더링이 망가진다.</p>
+
+<h3>1.11 쉐이더 쪽: StaticMeshShader와 MaterialPixelShader</h3>
+<h4>입력 레이아웃</h4>
+<p><code class="inline">StaticMeshShader</code>는 <code class="inline">FVertexTexture</code>를 입력으로 받는다.</p>
+
+<div class="code-block"><span class="kw">struct</span> <span class="ty">FVertexTexture</span>
+{
+    <span class="ty">FVector3D</span> _pos;  <span class="cm">// 12 bytes</span>
+    <span class="ty">FVector2D</span> _uv;   <span class="cm">//  8 bytes</span>
+};
+
+<span class="cm">// Init()</span>
+<span class="fn">AddInputLayoutDesc</span>(<span class="st">"POSITION"</span>, <span class="num">0</span>, DXGI_FORMAT_R32G32B32_FLOAT, <span class="num">0</span>, <span class="num">12</span>, D3D11_INPUT_PER_VERTEX_DATA, <span class="num">0</span>);
+<span class="fn">AddInputLayoutDesc</span>(<span class="st">"TEXCOORD"</span>, <span class="num">0</span>, DXGI_FORMAT_R32G32_FLOAT,    <span class="num">0</span>,  <span class="num">8</span>, D3D11_INPUT_PER_VERTEX_DATA, <span class="num">0</span>);
+<span class="fn">CreateInputLayout</span>();</div>
+
+<p>슬롯 0에 POSITION(12바이트), 다음 8바이트가 TEXCOORD. 기존 <code class="inline">ColorMeshShader</code>는
+TEXCOORD 대신 COLOR가 있었으므로, <strong>입력 레이아웃이 다른 쉐이더끼리는 같은 버텍스 버퍼를 공유할 수 없다</strong>.</p>
+
+<h4>VS (Mesh.fx)</h4>
+<div class="code-block"><span class="pp">#include</span> <span class="st">"Share.fx"</span>
+
+<span class="kw">struct</span> <span class="ty">VS_Input_Tex</span>  { <span class="ty">float3</span> Pos : POSITION; <span class="ty">float2</span> UV : TEXCOORD; };
+<span class="kw">struct</span> <span class="ty">VS_Ouput_Tex</span>  { <span class="ty">float4</span> Pos : SV_POSITION; <span class="ty">float2</span> UV : TEXCOORD; };
+
+<span class="ty">VS_Ouput_Tex</span> <span class="fn">MaterialMeshVS</span>(<span class="ty">VS_Input_Tex</span> input)
+{
+    <span class="ty">VS_Ouput_Tex</span> output = (<span class="ty">VS_Ouput_Tex</span>) <span class="num">0</span>;
+    output.Pos = <span class="fn">mul</span>(<span class="fn">float4</span>(input.Pos, <span class="num">1.f</span>), gWVP);  <span class="cm">// Transform cbuffer(b0)</span>
+    output.UV  = input.UV;
+    <span class="kw">return</span> output;
+}</div>
+
+<p>VS는 World·View·Proj을 곱해서 클립 공간 좌표를 만드는 것만 한다. UV는 그대로 PS로 패스스루.</p>
+
+<h4>PS (Mesh.fx)</h4>
+<div class="code-block"><span class="ty">PS_Output_Single</span> <span class="fn">DefaultMaterialPS</span>(<span class="ty">VS_Ouput_Tex</span> input)
+{
+    <span class="ty">PS_Output_Single</span> output = (<span class="ty">PS_Output_Single</span>) <span class="num">0</span>;
+
+    <span class="ty">float4</span> color = gBaseTexture.<span class="fn">Sample</span>(gBaseSample, input.UV);
+
+    color.rgb *= gMtrlBaseColor.rgb;
+    color.a   *= gMtrlOpacity;
+
+    output.Color = color;
+    <span class="kw">return</span> output;
+}</div>
+
+<ul>
+  <li><code class="inline">gBaseTexture.Sample(gBaseSample, UV)</code>가 실제 텍스처 샘플링. SRV와 샘플러의 만남.</li>
+  <li><code class="inline">gMtrlBaseColor.rgb</code>를 곱해서 색조를 입힌다. (1,1,1,1)이면 원색 유지.</li>
+  <li><code class="inline">gMtrlOpacity</code>를 알파에 곱해서 투명도 제어.</li>
+</ul>
+
+<p><code class="inline">MaterialPixelShader</code>는 이 PS 엔트리(<code class="inline">DefaultMaterialPS</code>)만 컴파일해서
+<code class="inline">ID3D11PixelShader</code>로 감싼 별도 리소스다. <code class="inline">StaticMeshShader</code>는 VS+PS를 모두 컴파일하지만,
+Material 시스템에서는 <code class="inline">StaticMeshShader</code>의 VS만 쓰고 PS는 <code class="inline">Material</code>이 지정한 걸로
+덮어씌우는 구조다(<code class="inline">Material::SetMaterial</code> 안에서 <code class="inline">_pixelShader-&gt;SetShader()</code>).</p>
+
+<h3>1.12 Mesh와 슬롯 — 멀티 머티리얼 대응</h3>
+<div class="code-block"><span class="kw">struct</span> <span class="ty">FMeshSlot</span>
+{
+    <span class="ty">FIndexBuffer</span>  _indexBuffer;
+    <span class="ty">Ptr</span>&lt;<span class="ty">Material</span>&gt; _material;
+};
+
+<span class="kw">class</span> <span class="ty">Mesh</span> : <span class="kw">public</span> <span class="ty">Asset</span>
+{
+    <span class="ty">FVertexBuffer</span>          _vertexBuffer;   <span class="cm">// 버텍스는 하나</span>
+    <span class="ty">std::vector</span>&lt;<span class="ty">FMeshSlot</span>&gt; _meshSlots;      <span class="cm">// 인덱스+머티리얼은 여러 개</span>
+};</div>
+
+<p>한 메쉬가 <strong>하나의 버텍스 버퍼</strong>를 공유하고, <strong>여러 인덱스 서브셋</strong>에
+각각 다른 머티리얼을 입힐 수 있다. 캐릭터 모델의 몸통/머리/장비를 버텍스 하나로 공유하면서
+서로 다른 텍스처를 바르는 전형적인 3D 파이프라인이 여기서 축소판으로 구현되어 있다.</p>
+
+<p><code class="inline">Mesh::CreateMesh</code> 시 자동으로 <code class="inline">MATERIAL_MANAGER-&gt;CreateMaterialInstance("DefaultMaterial")</code>을
+가져와 슬롯에 채운다. 그래서 Mesh가 만들어지려면 MaterialManager가 살아 있어야 한다.</p>
+
+<p><code class="inline">Mesh::Render()</code>는 슬롯 수가 0이면 인덱스 없이 <code class="inline">Draw</code>, 1개 이상이면 슬롯마다
+<code class="inline">IASetIndexBuffer</code> → <code class="inline">DrawIndexed</code>를 돌린다.</p>
+
+<h3>1.13 전체 호출 체인 — 프레임 한 번의 흐름</h3>
+<div class="call-chain"><span class="fn">GameEngine::Render</span>
+ └─ <span class="fn">RenderManager::Render</span>             <span class="step">← 레이어 순회</span>
+     └─ <span class="fn">SceneComponent::Render</span>        <span class="step">← ex. StaticMeshComponent</span>
+         └─ _transformCBuffer-&gt;<span class="fn">Update</span>      <span class="slot">(VS b0)</span>
+         └─ slot._material-&gt;<span class="fn">SetMaterial</span>()
+             ├─ _buffer-&gt;<span class="fn">Update</span>()            <span class="slot">(PS b1)</span>
+             ├─ <span class="fn">ShaderManager::SetSample</span>()  <span class="slot">(s0)</span>
+             ├─ _pixelShader-&gt;<span class="fn">SetShader</span>()    <span class="slot">(PS 교체)</span>
+             └─ <span class="fn">Texture::SetShader</span>()        <span class="slot">(t0)</span>
+         └─ <span class="fn">Mesh::Render</span>()
+             └─ <span class="fn">IASetVertexBuffers</span> → <span class="fn">IASetIndexBuffer</span> → <span class="fn">DrawIndexed</span>
+         └─ slot._material-&gt;<span class="fn">ResetMaterial</span>() <span class="slot">(t0 ← nullptr)</span></div>
+
+<p>이게 한 장의 텍스처가 화면에 찍히는 전체 호출 스택이다.</p>
+</div>
+
+<!-- ============================================================ -->
+<!-- 탭: 2부 응용편 -->
+<!-- ============================================================ -->
+<div class="tab-panel" id="tab-apply">
+<h2>Part 2. 응용편 — 실제 코드에서 쓰는 법</h2>
+
+<h3>2.1 시작 세팅 — 리소스 폴더와 DirectoryManager</h3>
+<ol>
+  <li>프로젝트 루트에 <code class="inline">Resources/Texture/</code> 폴더를 만든다.</li>
+  <li>여기에 <code class="inline">muzi-removebg-preview.png</code>, <code class="inline">apeach.png</code> 같은 파일을 넣는다.</li>
+  <li><code class="inline">DirectoryManager::Init</code>에 <code class="inline">RegisterPath("Resources")</code>가 포함돼 있어야 한다.
+    이게 없으면 <code class="inline">GetPath("Resources")</code>가 empty optional을 반환해서 <code class="inline">LoadTexture</code>가 false로 떨어진다.</li>
+</ol>
+
+<h3>2.2 게임 시작 시 텍스처 프리로드</h3>
+<p>가장 쉬운 방법은 <code class="inline">TextureManager::Init</code>에서 필요한 것들을 일괄 로드:</p>
+
+<div class="code-block"><span class="ty">bool</span> <span class="fn">TextureManager::Init</span>()
+{
+    <span class="kw">if</span> (!<span class="fn">LoadTexture</span>(<span class="st">"muzi"</span>,   <span class="fn">TEXT</span>(<span class="st">"muzi-removebg-preview.png"</span>))) <span class="kw">return</span> <span class="kw">false</span>;
+    <span class="kw">if</span> (!<span class="fn">LoadTexture</span>(<span class="st">"apeach"</span>, <span class="fn">TEXT</span>(<span class="st">"apeach.png"</span>)))                <span class="kw">return</span> <span class="kw">false</span>;
+    <span class="kw">return</span> <span class="kw">true</span>;
+}</div>
+
+<p>이렇게 하면 이후 <code class="inline">TEXTURE_MANAGER-&gt;FindTexture("muzi")</code> 한 줄로 어디서든 꺼내 쓸 수 있다.</p>
+
+<div class="callout tip">
+  <span class="label">💡 TIP</span>
+  프로덕션에서는 레벨 로드 시점에 필요한 텍스처만 모으는 쪽이 맞지만, 수업용 프로젝트에서는 Init에서 일괄 로드하는 쪽이 편하다.
+</div>
+
+<h3>2.3 액터에 텍스처 입히기 — 가장 흔한 패턴</h3>
+<p><code class="inline">Player::Init</code> 내부를 보자.</p>
+
+<div class="code-block"><span class="ty">Ptr</span>&lt;<span class="ty">StaticMeshComponent</span>&gt; meshComp = <span class="fn">CreateSceneComponent</span>&lt;<span class="ty">StaticMeshComponent</span>&gt;(<span class="st">"Mesh"</span>);
+meshComp-&gt;<span class="fn">SetMesh</span>(<span class="st">"TexRect"</span>);            <span class="cm">// 사각 텍스처 메쉬</span>
+meshComp-&gt;<span class="fn">AddTexture</span>(<span class="num">0</span>, <span class="st">"muzi"</span>, <span class="num">0</span>);       <span class="cm">// 슬롯0, "muzi" 텍스처, 레지스터 t0</span>
+
+<span class="fn">SetRootComponent</span>(meshComp);
+meshComp-&gt;<span class="fn">SetRenderLayer</span>(<span class="st">"Default"</span>);     <span class="cm">// (RenderManager 쓸 때)</span></div>
+
+<ul>
+  <li><code class="inline">"TexRect"</code>는 <code class="inline">MeshManager::Init</code>에서 미리 등록된 사각형(UV 포함) 메쉬다.</li>
+  <li><code class="inline">AddTexture(slot, name, registerNum)</code>의 인자 의미:
+    <ul>
+      <li><code class="inline">slot</code>: <code class="inline">FMeshSlot</code> 인덱스. 일반적으로 0.</li>
+      <li><code class="inline">name</code>: <code class="inline">TextureManager</code>에 등록된 이름.</li>
+      <li><code class="inline">registerNum</code>: HLSL의 <code class="inline">Texture2D gBaseTexture : register(t0)</code>와 맞춰서 0.</li>
+    </ul>
+  </li>
+  <li><code class="inline">StaticMeshComponent::AddTexture</code>는 내부적으로 슬롯의 머티리얼을 찾아
+    <code class="inline">Material::AddTexture(textureName, 0)</code>을 호출한다.</li>
+</ul>
+
+<h3>2.4 컬러 틴팅 / 투명도 — 머티리얼 파라미터 변경</h3>
+<p>슬롯 0의 머티리얼을 꺼내서 세터를 호출하면 된다.</p>
+
+<div class="code-block"><span class="cm">// 반투명 몬스터</span>
+<span class="ty">Ptr</span>&lt;<span class="ty">StaticMeshComponent</span>&gt; mesh = <span class="fn">Cast</span>&lt;<span class="ty">SceneComponent</span>, <span class="ty">StaticMeshComponent</span>&gt;(_root);
+mesh-&gt;<span class="fn">SetOpacity</span>(<span class="num">0</span>, <span class="num">0.5f</span>);                   <span class="cm">// 슬롯0 머티리얼의 투명도</span>
+mesh-&gt;<span class="fn">SetBaseColor</span>(<span class="num">0</span>, <span class="num">1.f</span>, <span class="num">0.3f</span>, <span class="num">0.3f</span>, <span class="num">1.f</span>); <span class="cm">// 빨간 틴트</span></div>
+
+<p>매 프레임 아무데서나 바꿔도 된다. <code class="inline">Material::SetMaterial</code>이 드로우 직전에
+상수버퍼를 다시 올려주기 때문에 그 프레임부터 바로 반영된다.</p>
+
+<p><strong>깜빡이 이펙트 (Tick 안에서):</strong></p>
+<div class="code-block"><span class="ty">void</span> <span class="fn">Player::Tick</span>(<span class="ty">float</span> deltaTime)
+{
+    <span class="fn">Pawn::Tick</span>(deltaTime);
+
+    <span class="kw">if</span> (_opacity &gt;= <span class="num">1.f</span>)       reverse = <span class="kw">true</span>;
+    <span class="kw">else if</span> (_opacity &lt;= <span class="num">0.1f</span>) reverse = <span class="kw">false</span>;
+
+    _opacity += reverse ? -deltaTime : deltaTime;
+
+    <span class="ty">Ptr</span>&lt;<span class="ty">StaticMeshComponent</span>&gt; mesh = <span class="fn">Cast</span>&lt;<span class="ty">SceneComponent</span>, <span class="ty">StaticMeshComponent</span>&gt;(_root);
+    mesh-&gt;<span class="fn">SetOpacity</span>(<span class="num">0</span>, _opacity);
+}</div>
+
+<h3>2.5 텍스처 런타임 교체 — 히트 시 색 반전 같은 것</h3>
+<p><code class="inline">Material::AddTexture</code>로 추가한 정보를 나중에 바꾸고 싶을 수 있다.
+가장 단순한 방법은 <strong>머티리얼 인스턴스를 새로 만들어 갈아끼우는 것</strong>:</p>
+
+<div class="code-block"><span class="ty">Ptr</span>&lt;<span class="ty">Material</span>&gt; newMat = MATERIAL_MANAGER-&gt;<span class="fn">CreateMaterialInstance</span>(<span class="st">"DefaultMaterial"</span>);
+newMat-&gt;<span class="fn">AddTexture</span>(<span class="st">"apeach"</span>, <span class="num">0</span>);
+newMat-&gt;<span class="fn">SetBaseColor</span>(<span class="fn">FVector4D</span>(<span class="num">2.f</span>, <span class="num">2.f</span>, <span class="num">2.f</span>, <span class="num">1.f</span>)); <span class="cm">// 1.0 초과 = 밝기 부스트</span>
+mesh-&gt;<span class="fn">SetMaterial</span>(<span class="num">0</span>, newMat);</div>
+
+<p>"피격 시 흰색 번쩍" 같은 건 이렇게 머티리얼을 통째로 교체하는 쪽이 깔끔하다.</p>
+
+<h3>2.6 샘플러 바꾸기 — 픽셀 아트는 POINT로</h3>
+<p>기본은 LINEAR라서 저해상도 스프라이트가 뿌옇게 나온다. 픽셀 아트라면:</p>
+
+<div class="code-block"><span class="ty">Ptr</span>&lt;<span class="ty">Material</span>&gt; mat = MATERIAL_MANAGER-&gt;<span class="fn">CreateMaterialInstance</span>(<span class="st">"DefaultMaterial"</span>);
+mat-&gt;<span class="fn">SetSamplerType</span>(eTextureSampleType::TEXTURE_SAMPLE_POINT);
+mat-&gt;<span class="fn">AddTexture</span>(<span class="st">"player_pixel"</span>, <span class="num">0</span>);
+mesh-&gt;<span class="fn">SetMaterial</span>(<span class="num">0</span>, mat);</div>
+
+<p><code class="inline">SetSamplerType</code>은 머티리얼 안에만 저장되고, 실제 <code class="inline">PSSetSamplers</code>는
+<code class="inline">Material::SetMaterial</code>에서 <code class="inline">ShaderManager::SetSample(_sampleType)</code>을 호출할 때 일어난다.</p>
+
+<h3>2.7 다중 텍스처 바인딩 (멀티 텍스처링 준비)</h3>
+<p>HLSL 쪽에 두 번째 텍스처를 추가하면:</p>
+
+<div class="code-block"><span class="ty">Texture2D</span> gBaseTexture  : <span class="kw">register</span>(t0);
+<span class="ty">Texture2D</span> gDetailTexture: <span class="kw">register</span>(t1);</div>
+
+<p>C++에서는:</p>
+<div class="code-block">material-&gt;<span class="fn">AddTexture</span>(<span class="st">"muzi"</span>,        <span class="num">0</span>);  <span class="cm">// t0</span>
+material-&gt;<span class="fn">AddTexture</span>(<span class="st">"noise_detail"</span>, <span class="num">1</span>); <span class="cm">// t1</span></div>
+
+<p>이렇게 두 번 부르면 <code class="inline">Material::_textures</code>에 엔트리 2개가 쌓이고, <code class="inline">SetMaterial</code> 루프가 두 SRV를 모두 바인딩한다.</p>
+
+<div class="callout warn">
+  <span class="label">⚠ WARN</span>
+  <code class="inline">Material::AddTexture</code>가 <code class="inline">_buffer-&gt;SetTextureWidth/Height</code>를 호출한다.
+  두 번째 텍스처를 추가하면 width/height가 그쪽으로 덮어쓰기된다. 두 텍스처 해상도가 다르면 HLSL의
+  <code class="inline">gMtrlTextureWidth</code>는 나중에 추가된 쪽 값을 갖게 된다. 첫 텍스처 사이즈가 중요하다면 추가 순서를 주의하거나
+  <code class="inline">SetTextureWidth/Height</code>를 수동으로 다시 불러준다.
+</div>
+
+<h3>2.8 커스텀 픽셀 쉐이더 붙이기</h3>
+<p>예컨대 그레이스케일 PS를 만들고 싶다면:</p>
+
+<p><strong>① Mesh.fx에 엔트리 추가</strong></p>
+<div class="code-block"><span class="ty">PS_Output_Single</span> <span class="fn">GrayscalePS</span>(<span class="ty">VS_Ouput_Tex</span> input)
+{
+    <span class="ty">float4</span> color = gBaseTexture.<span class="fn">Sample</span>(gBaseSample, input.UV);
+    <span class="ty">float</span> gray = <span class="fn">dot</span>(color.rgb, <span class="fn">float3</span>(<span class="num">0.299</span>, <span class="num">0.587</span>, <span class="num">0.114</span>));
+    color.rgb = <span class="fn">float3</span>(gray, gray, gray);
+    color.a  *= gMtrlOpacity;
+    <span class="ty">PS_Output_Single</span> output;
+    output.Color = color;
+    <span class="kw">return</span> output;
+}</div>
+
+<p><strong>② 새로운 Shader 클래스 <code class="inline">GrayscalePixelShader</code>를 <code class="inline">MaterialPixelShader</code>처럼 만들어서
+  <code class="inline">LoadPixelShader("GrayscalePS", "Mesh.fx")</code>로 컴파일.</strong></p>
+
+<p><strong>③ ShaderManager::Init에 등록</strong></p>
+<div class="code-block"><span class="fn">CreateShader</span>&lt;<span class="ty">GrayscalePixelShader</span>&gt;(<span class="st">"GrayscalePixelShader"</span>);</div>
+
+<p><strong>④ 머티리얼 생성 시 사용</strong></p>
+<div class="code-block">MATERIAL_MANAGER-&gt;<span class="fn">CreateMaterial</span>(
+    <span class="st">"GrayMaterial"</span>,
+    <span class="st">"GrayscalePixelShader"</span>,
+    eTextureSampleType::TEXTURE_SAMPLE_LINEAR);
+
+<span class="ty">Ptr</span>&lt;<span class="ty">Material</span>&gt; m = MATERIAL_MANAGER-&gt;<span class="fn">CreateMaterialInstance</span>(<span class="st">"GrayMaterial"</span>);
+m-&gt;<span class="fn">AddTexture</span>(<span class="st">"muzi"</span>, <span class="num">0</span>);
+mesh-&gt;<span class="fn">SetMaterial</span>(<span class="num">0</span>, m);</div>
+
+<p>이게 "새 쉐이더 효과를 프로젝트에 붙이는" 표준 절차다.</p>
+
+<h3>2.9 자주 보는 함정과 디버깅 체크리스트</h3>
+<table class="bug-table">
+  <thead>
+    <tr><th style="width:35%">증상</th><th>의심 원인</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>화면이 완전히 검정</td><td><code class="inline">SetMaterial</code>에서 <code class="inline">_pixelShader == nullptr</code>. <code class="inline">CreateMaterial</code>의 psName 오타 확인.</td></tr>
+    <tr><td>텍스처가 흰색 사각형으로만 보임</td><td>SRV는 바인딩됐지만 샘플이 실패. UV가 전부 0이거나 TEXCOORD 입력 레이아웃이 빠진 경우.</td></tr>
+    <tr><td>텍스처가 뒤집혀 보임</td><td>DirectX의 UV 원점은 좌상단. PNG 자체는 좌상단 원점이라 정상이지만, 메쉬 정의에서 V를 반대로 줬을 수 있음. <code class="inline">TexRect</code>의 UV 확인.</td></tr>
+    <tr><td>반투명이 안 먹힘</td><td><code class="inline">RenderManager</code>가 <code class="inline">AlphaBlend</code> state를 거는지 확인. 또는 <code class="inline">_opacity &lt; 1</code>이지만 BlendState가 없으면 그냥 불투명으로 찍힘.</td></tr>
+    <tr><td>엉뚱한 텍스처가 찍힘</td><td>이전 드로우의 <code class="inline">Material::ResetMaterial</code>이 호출되지 않아 SRV가 남아 있음.</td></tr>
+    <tr><td>빌드 에러 LNK2019: CreateShaderResourceView</td><td>DirectXTex lib 경로/이름 확인. Debug/Release에 맞는 lib이 링크되는지.</td></tr>
+    <tr><td>런타임에 크래시 in <code class="inline">Material::_buffer</code></td><td><code class="inline">ShaderManager::Init</code>이 <code class="inline">AssetManager::Init</code>보다 나중에 불림. 순서 반대로.</td></tr>
+    <tr><td><code class="inline">.png</code>는 되는데 <code class="inline">.dds</code>만 실패</td><td><code class="inline">DirectoryManager::IsExtension</code> 버그 버전일 가능성. <code class="inline">compare()</code> 반환값 확인.</td></tr>
+  </tbody>
+</table>
+
+<h3>2.10 확장 아이디어</h3>
+<p>이 시스템을 기반으로 쉽게 확장할 수 있는 것들:</p>
+<ul>
+  <li><strong>스프라이트 애니메이션</strong>: UV를 상수버퍼로 넘겨서 매 프레임 offset을 바꾸면
+    하나의 스프라이트 시트에서 여러 프레임을 재생할 수 있다. KDT6_DX의 <code class="inline">Animation2D</code> 시스템이 정확히 이 방향.</li>
+  <li><strong>팔레트 스왑</strong>: 두 번째 텍스처 슬롯에 LUT(look-up table)를 꽂고, PS에서 원본 픽셀을
+    LUT 좌표로 사용해 색을 재매핑. "같은 스프라이트, 다른 색" 몬스터 바리에이션에 쓴다.</li>
+  <li><strong>아웃라인</strong>: 두 번 그린다. 첫 번째는 약간 확대 + 단색으로, 두 번째는 원본으로.
+    <code class="inline">Material</code>을 두 개 준비해 <code class="inline">Mesh::Render</code> 전에 아웃라인 쪽을 먼저 렌더.</li>
+  <li><strong>노멀 맵 라이팅</strong>: 2D에서도 픽셀 단위 라이팅 가능. 노멀 텍스처를 <code class="inline">t1</code>에 꽂고
+    PS에서 라이트 방향과 내적. 이건 cbuffer에 라이트 정보를 추가해야 한다.</li>
+  <li><strong>디졸브/페이드</strong>: 노이즈 텍스처를 <code class="inline">t1</code>에 꽂고, cbuffer에 <code class="inline">dissolve threshold</code>를 넘긴 뒤
+    PS에서 <code class="inline">if (noise.r &lt; threshold) discard;</code>. 메탈기어 스타일 페이드 아웃.</li>
+</ul>
+
+<p>모든 확장은 <strong>"새 HLSL 엔트리 + 새 Shader 래퍼 + <code class="inline">ShaderManager::Init</code> 등록 +
+<code class="inline">MaterialManager::CreateMaterial</code>"</strong>의 4단계 패턴을 따른다. 이 패턴만 몸에 익혀두면 이펙트를 프로젝트에 붙이는 속도가 현저히 빨라진다.</p>
+</div>
+
+<!-- ============================================================ -->
+<!-- 탭: 부록 -->
+<!-- ============================================================ -->
+<div class="tab-panel" id="tab-appendix">
+<h2>부록 A. 초기화 의존성 요약</h2>
+
+<div class="dep-tree"><span class="node">DirectoryManager</span> <span class="note">(Resources 경로)</span>
+        <span class="arr">↓</span>
+<span class="node">Device</span>            <span class="note">(ID3D11Device/Context)</span>
+        <span class="arr">↓</span>
+<span class="node">ShaderManager</span>     <span class="note">← MaterialCBuffer 등록, Material을 b1로 생성, 샘플러 생성</span>
+        <span class="arr">↓</span>
+<span class="node">AssetManager</span>
+ ├─ <span class="node">TextureManager</span>   <span class="note">(PNG 로드 → SRV)</span>
+ ├─ <span class="node">MaterialManager</span>  <span class="note">(ShaderManager의 Material cbuffer 참조)</span>
+ └─ <span class="node">MeshManager</span>      <span class="note">(MaterialManager의 DefaultMaterial 참조)</span>
+        <span class="arr">↓</span>
+<span class="node">RenderManager</span>     <span class="note">(레이어, BlendState, DepthStencilState)</span>
+        <span class="arr">↓</span>
+<span class="node">World / Level / Actor</span></div>
+
+<p><strong>순서를 지키지 않으면 조용히 망가지는 지점:</strong></p>
+<ul>
+  <li><code class="inline">AssetManager</code> &lt; <code class="inline">ShaderManager</code> → <code class="inline">Material::_buffer == nullptr</code>.
+    렌더는 되지만 컬러/투명도/사이즈가 전부 0 또는 쓰레기값으로 동작.</li>
+  <li><code class="inline">Mesh</code> &lt; <code class="inline">Material</code> → <code class="inline">Mesh::CreateMesh</code>에서
+    <code class="inline">MATERIAL_MANAGER</code>가 nullptr이라 크래시.</li>
+  <li><code class="inline">Material</code> &lt; <code class="inline">Texture</code> → <code class="inline">Material::AddTexture(name, ...)</code>이
+    <code class="inline">FindTexture</code>로 nullptr을 받아 조용히 추가가 실패.</li>
+</ul>
+
+<h2>부록 B. HLSL 레지스터 슬롯 한눈에</h2>
+<table class="reg-table">
+  <thead>
+    <tr><th>자원 종류</th><th>접두</th><th>VS</th><th>PS</th><th>KDT6_DX 할당</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Constant Buffer</td>
+      <td><code class="inline">b</code></td>
+      <td>b0: Transform</td>
+      <td>b0: Color, b1: Material</td>
+      <td>b0 / b1</td>
+    </tr>
+    <tr>
+      <td>Shader Resource (텍스처)</td>
+      <td><code class="inline">t</code></td>
+      <td>—</td>
+      <td>t0: gBaseTexture</td>
+      <td>t0</td>
+    </tr>
+    <tr>
+      <td>Sampler</td>
+      <td><code class="inline">s</code></td>
+      <td>—</td>
+      <td>s0: gBaseSample</td>
+      <td>s0</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>VS와 PS는 <strong>slot이 분리</strong>되어 있어서 VS의 <code class="inline">b0</code>(Transform)와 PS의 <code class="inline">b0</code>(Color)는
+충돌하지 않는다. 단 같은 스테이지 안에서는 슬롯이 유일해야 한다.</p>
+
+<h2>부록 C. 파일 목록</h2>
+
+<div class="file-group">
+  <div class="grp-title">Core — 에셋/매니저 레이어</div>
+  <div><code>Texture.h/.cpp</code> <span class="desc">— 텍스처 로드·SRV 생성·바인딩</span></div>
+  <div><code>TextureManager.h/.cpp</code> <span class="desc">— 이름 기반 레지스트리</span></div>
+  <div><code>Material.h/.cpp</code> <span class="desc">— 텍스처+쉐이더+샘플러 묶음</span></div>
+  <div><code>MaterialManager.h/.cpp</code> <span class="desc">— 원본 머티리얼 관리 + Clone 팩토리</span></div>
+</div>
+
+<div class="file-group">
+  <div class="grp-title">Shader — 쉐이더/상수버퍼 레이어</div>
+  <div><code>MaterialCBuffer.h/.cpp</code> <span class="desc">— FMaterialCBufferData CPU→GPU 어댑터</span></div>
+  <div><code>MaterialPixelShader.h/.cpp</code> <span class="desc">— 머티리얼 전용 PS</span></div>
+  <div><code>StaticMeshShader.h/.cpp</code> <span class="desc">— VS + PS + 입력 레이아웃</span></div>
+  <div><code>CBufferData.h</code> <span class="desc">— FMaterialCBufferData 구조체 정의</span></div>
+  <div><code>ShaderManager.h/.cpp</code> <span class="desc">— 샘플러 생성, Material cbuffer 등록</span></div>
+</div>
+
+<div class="file-group">
+  <div class="grp-title">HLSL</div>
+  <div><code>Share.fx</code> <span class="desc">— 공용 cbuffer 선언 + gBaseTexture/gBaseSample 선언</span></div>
+  <div><code>Mesh.fx</code> <span class="desc">— MaterialMeshVS + DefaultMaterialPS 엔트리</span></div>
+</div>
+
+<div class="file-group">
+  <div class="grp-title">Common</div>
+  <div><code>Info.h</code> <span class="desc">— eTextureSampleType, eAssetType::TEXTURE/MATERIAL, FVertexTexture</span></div>
+</div>
+</div>
+
+<!-- ===== 스크립트 ===== -->
+<script>
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  });
+});
+</script>
+
+</body>
+</html>
